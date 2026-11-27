@@ -108,8 +108,9 @@ readonly property bool iconsOnly: ForkIdentity.isIconsOnly(Plasmoid.pluginName)
   Повторный вызов отсекается флагом `dragApplied`. Цель берётся из последней позиции курсора
   (`dragOverGroup`/`dragOverItem`), поэтому важен сам факт «курсор был над группой», а не drop.
 
-  Для диагностики в живой панели есть флаг `dndDebug` в `main.qml`: при `true` все шаги
-  перетаскивания пишутся в журнал (`journalctl --user -u plasma-plasmashell`, строки `[dnd]`).
+  Для диагностики в живой панели есть флаг `dndDebug` в `main.qml` (по умолчанию `false`):
+  при `true` все шаги перетаскивания пишутся в журнал
+  (`journalctl --user -u plasma-plasmashell`, строки `[dnd]`).
 
   Важно: у строк-лончеров libtaskmanager отдаёт пустой `MimeType` и невалидный `MimeData`
   (`AbstractTasksModel::data()`), из-за чего Qt не мог собрать drag и закрепления вообще
@@ -219,3 +220,9 @@ make uninstall   # убрать форк
 - Точная версия под систему: `git checkout v6.3.6`
 - В каталоге есть `contents/config/main.xml.dpkg-distrib` — след локальной правки
   системного файла; `make diff` его тоже покажет.
+
+## Лицензия
+
+GPL-2.0-or-later (см. `LICENSE`). Код — форк `applets/taskmanager` из KDE Plasma,
+авторские права принадлежат участникам KDE (в частности Eike Hein); изменения форка
+распространяются на тех же условиях.

@@ -192,9 +192,10 @@ PlasmoidItem {
     // Перенос уже применён для текущего драга — защита от двойного применения
     // (drop и конец драга приходят в неопределённом порядке).
     property bool dragApplied: false
-    // Временная диагностика drag-n-drop: пишет в journal (journalctl --user
-    // -u plasma-plasmashell). Включается на время проверки в реальной панели.
-    readonly property bool dndDebug: true
+    // Диагностика drag-n-drop: при true все шаги перетаскивания пишутся в
+    // journal (journalctl --user -u plasma-plasmashell, строки «[dnd]»).
+    // По умолчанию выключена — включать только на время отладки.
+    readonly property bool dndDebug: false
 
     function dndLog(message: string): void {
         if (tasks.dndDebug) {
