@@ -416,6 +416,22 @@ PlasmoidItem {
         return null;
     }
 
+    // Закреплено ли приложение этой строки на своём столе. У закреплённого
+    // приложения строка модели может быть окном (IsLauncher=false), но порядок
+    // всё равно задаёт конфиг launcherDesktops.
+    function isPinnedOnSourceDesktop(item): bool {
+        if (!item || !item.model || !item.taskModel) {
+            return false;
+        }
+        const desktopId = item.taskModel.virtualDesktop !== undefined
+            ? String(item.taskModel.virtualDesktop) : "";
+        if (!desktopId) {
+            return false;
+        }
+        return tasks.hasLauncherOnDesktop(item.model.LauncherUrlWithoutIcon, desktopId,
+            tasks.launcherDesktops);
+    }
+
     // Завершение перетаскивания внутри виджета: перенос задачи или закрепления
     // в другую группу (рабочий стол) либо перестановка закреплений.
     // Порядок закреплений живёт в конфиге (launcherDesktops), поэтому переставляем
@@ -442,36 +458,43 @@ PlasmoidItem {
             ? String(source.taskModel.virtualDesktop) : "";
         const targetDesktop = overGroup ? String(overGroup.modelData) : "";
         const url = source.model.LauncherUrlWithoutIcon;
+        // Закрепление есть не только у строк-лончеров: у запущенного
+        // закреплённого приложения строка — окно, но порядок его иконки всё
+        // равно задаётся конфигом.
+        const pinned = tasks.isPinnedOnSourceDesktop(source);
 
         tasks.dndLog("finish: app=" + source.model.AppName
             + " launcher=" + (source.model.IsLauncher === true)
+            + " pinned=" + pinned
             + " src=" + sourceDesktop.substring(0, 8)
             + " dst=" + (targetDesktop ? targetDesktop.substring(0, 8) : "none")
             + " overItem=" + (overItem && overItem.model ? overItem.model.AppName : "null"));
 
-        if (source.model.IsLauncher === true) {
-            if (targetDesktop && targetDesktop !== sourceDesktop) {
+        if (targetDesktop && targetDesktop !== sourceDesktop) {
+            // Переезд на другой стол: закрепление едет вместе с приложением,
+            // окно — только если это не строка-лончер.
+            if (pinned) {
                 tasks.moveLauncherPin(url, sourceDesktop, targetDesktop);
-            } else if (overItem && overItem !== source && overItem.model
-                       && overItem.model.IsLauncher === true
-                       && source.taskModel && overItem.taskModel
-                       && String(overItem.taskModel.virtualDesktop) === sourceDesktop) {
-                tasks.reorderLauncherPin(sourceDesktop, url,
-                    overItem.model.LauncherUrlWithoutIcon, overItem.index > source.index);
+            }
+            if (source.model.IsLauncher !== true) {
+                source.taskModel.requestVirtualDesktops(source.modelIndex(), [targetDesktop]);
             }
             return;
         }
 
-        if (!targetDesktop || targetDesktop === sourceDesktop) {
+        // Тот же стол: порядок закреплений живёт в конфиге, поэтому переставляем
+        // запись конфига, а не строку модели (иначе модель и конфиг разъедутся
+        // и иконка вернётся на место).
+        if (!pinned || !overItem || overItem === source || !overItem.model) {
             return;
         }
 
-        // Окно переезжает на другой стол; если приложение было закреплено
-        // за исходным столом — закрепление едет вместе с ним.
-        if (tasks.hasLauncherOnDesktop(url, sourceDesktop, tasks.launcherDesktops)) {
-            tasks.moveLauncherPin(url, sourceDesktop, targetDesktop);
+        if (!tasks.isPinnedOnSourceDesktop(overItem)) {
+            return;
         }
-        source.taskModel.requestVirtualDesktops(source.modelIndex(), [targetDesktop]);
+
+        tasks.reorderLauncherPin(sourceDesktop, url,
+            overItem.model.LauncherUrlWithoutIcon, overItem.index > source.index);
     }
 
     readonly property TaskManager.TasksModel tasksModel: TaskManager.TasksModel {

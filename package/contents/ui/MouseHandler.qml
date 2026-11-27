@@ -109,10 +109,13 @@ DropArea {
         }
 
         const taskModel = above.taskModel || tasksModel;
-        if (tasks.groupByDesktop && tasks.dragSource?.model?.IsLauncher) {
+        if (tasks.groupByDesktop && tasks.dragSource
+                && (tasks.dragSource.model?.IsLauncher
+                    || tasks.isPinnedOnSourceDesktop(tasks.dragSource))) {
             // Порядок закреплений живёт в конфиге: move() в модели разошёлся бы
-            // с ним (libtaskmanager потом сдвигает строки ещё раз), поэтому
-            // переставляем записи конфига по завершении драга.
+            // с ним (libtaskmanager потом сдвигает строки ещё раз, и иконка
+            // возвращается на место), поэтому переставляем записи конфига по
+            // завершении драга. Живого «разъезжания» под курсором поэтому нет.
             return;
         }
         if (taskModel.sortMode === TaskManager.TasksModel.SortManual && tasks.dragSource) {
