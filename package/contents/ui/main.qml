@@ -18,6 +18,7 @@ import org.kde.plasma.workspace.trianglemousefilter
 
 import org.kde.taskmanager as TaskManager
 import org.kde.plasma.private.taskmanager as TaskManagerApplet
+import org.kde.plasma.private.pager as Pager
 import org.kde.plasma.workspace.dbus as DBus
 
 import "code/identity.js" as ForkIdentity
@@ -38,8 +39,37 @@ PlasmoidItem {
     // fork: «кто мы такие» определяется в одном месте — code/identity.js
     readonly property bool iconsOnly: ForkIdentity.isIconsOnly(Plasmoid.pluginName)
     // fork: задачи раскладываются группами по виртуальным рабочим столам,
-    // а чипы столов работают как пейджер (см. README).
+    // а подпись группы работает ещё и как пейджер (см. README).
     readonly property bool groupByDesktop: Plasmoid.configuration.groupByDesktop
+
+    // fork: имена рабочих столов VirtualDesktopInfo отдаёт асинхронно: список
+    // наполняется уже после создания апплета, причём без desktopNamesChanged
+    // (в пробе все 4 сигнала пришли с пустыми именами). Поэтому держим свою
+    // копию и подтягиваем её таймером — иначе подписи групп остаются пустыми.
+    property var desktopNames: []
+
+    // Подпись группы: имя рабочего стола, а если оно пустое — номер (с 1).
+    // names передаётся аргументом, иначе QML не увидит зависимость от
+    // tasks.desktopNames и подпись не обновится, когда имена доедут.
+    function desktopLabel(index: int, names: var): string {
+        const name = names ? names[index] : undefined;
+        if (name !== undefined && name !== null && String(name).length > 0) {
+            return String(name);
+        }
+        return String(index + 1);
+    }
+
+    function desktopNamesEqual(a, b): bool {
+        if (!a || !b || a.length !== b.length) {
+            return false;
+        }
+        for (let i = 0; i < a.length; ++i) {
+            if (String(a[i]) !== String(b[i])) {
+                return false;
+            }
+        }
+        return true;
+    }
 
     property Task toolTipOpenedByClick
     property Task toolTipAreaItem
@@ -333,6 +363,15 @@ PlasmoidItem {
             id: virtualDesktopInfo
         }
 
+        // Переключение рабочих столов из подписей групп (тот же механизм,
+        // что использует штатный апплет «Пейджер»).
+        Pager.PagerModel {
+            id: desktopPagerModel
+            enabled: tasks.groupByDesktop
+            pagerType: Pager.PagerModel.VirtualDesktops
+            screenGeometry: Plasmoid.containment.screenGeometry
+        }
+
         TaskManager.ActivityInfo {
             id: activityInfo
             readonly property string nullUuid: "00000000-0000-0000-0000-000000000000"
@@ -342,6 +381,29 @@ PlasmoidItem {
             id: pulseAudio
             sourceComponent: pulseAudioComponent
             active: pulseAudioComponent.status === Component.Ready
+        }
+
+        // fork: обновление имён рабочих столов (см. комментарий у tasks.desktopNames).
+        // Список от VirtualDesktopInfo может меняться «на месте», поэтому каждый
+        // тик делаем обычный JS-массив и сравниваем его с текущей копией.
+        Timer {
+            id: desktopNamesTimer
+
+            interval: 1000
+            repeat: true
+            triggeredOnStart: true
+            running: tasks.groupByDesktop
+
+            onTriggered: {
+                const raw = virtualDesktopInfo.desktopNames;
+                const names = [];
+                for (let i = 0; i < raw.length; ++i) {
+                    names.push(String(raw[i]));
+                }
+                if (!tasks.desktopNamesEqual(tasks.desktopNames, names)) {
+                    tasks.desktopNames = names;
+                }
+            }
         }
 
         Timer {
@@ -526,7 +588,7 @@ PlasmoidItem {
                     }
                 }
 
-                // --- режим форка: пейджер + группа иконок на каждый стол ----
+                // --- режим форка: [подпись стола | его иконки] на каждый стол ---
                 Grid {
                     id: groupsRow
 
@@ -539,11 +601,6 @@ PlasmoidItem {
 
                     flow: tasks.vertical ? Grid.TopToBottom : Grid.LeftToRight
                     spacing: 1
-
-                    DesktopPager {
-                        id: desktopPager
-                        tasksRoot: tasks
-                    }
 
                     Repeater {
                         id: desktopGroupRepeater
@@ -562,9 +619,10 @@ PlasmoidItem {
                             // Место под разделитель между группами.
                             readonly property int separatorWidth: index > 0 ? 3 : 0
 
-                            width: groupList.width + separatorWidth
-                            height: groupList.height
-                            visible: groupModel.count > 0
+                            // Пустые столы тоже показываем: подпись группы — это и есть
+                            // индикатор рабочих столов.
+                            width: content.width + separatorWidth
+                            height: content.height
 
                             // Модель именно этого рабочего стола.
                             TaskManager.TasksModel {
@@ -601,31 +659,45 @@ PlasmoidItem {
                                 opacity: 0.5
                             }
 
-                            TaskList {
-                                id: groupList
+                            // Подпись стола + его иконки.
+                            Grid {
+                                id: content
 
                                 x: groupRoot.separatorWidth
-                                anchors.top: parent.top
+                                y: 0
 
-                                tasksRoot: tasks
-                                taskModel: groupModel
-                                clampToWidget: false
+                                flow: tasks.vertical ? Grid.TopToBottom : Grid.LeftToRight
 
-                                LayoutMirroring.enabled: tasks.shouldBeMirrored(Plasmoid.configuration.reverseMode, Qt.application.layoutDirection, vertical)
-
-                                onAnimatingChanged: {
-                                    if (!animating) {
-                                        tasks.publishIconGeometries(children, tasks);
-                                    }
+                                DesktopHeader {
+                                    desktopName: tasks.desktopLabel(groupRoot.index, tasks.desktopNames)
+                                    current: groupRoot.current
+                                    tasksRoot: tasks
+                                    onActivated: tasks.switchToDesktop(groupRoot.index)
                                 }
 
-                                Repeater {
-                                    model: groupModel
+                                TaskList {
+                                    id: groupList
 
-                                    delegate: Task {
-                                        tasksRoot: tasks
-                                        taskModel: groupModel
-                                        taskList: groupList
+                                    tasksRoot: tasks
+                                    taskModel: groupModel
+                                    clampToWidget: false
+
+                                    LayoutMirroring.enabled: tasks.shouldBeMirrored(Plasmoid.configuration.reverseMode, Qt.application.layoutDirection, vertical)
+
+                                    onAnimatingChanged: {
+                                        if (!animating) {
+                                            tasks.publishIconGeometries(children, tasks);
+                                        }
+                                    }
+
+                                    Repeater {
+                                        model: groupModel
+
+                                        delegate: Task {
+                                            tasksRoot: tasks
+                                            taskModel: groupModel
+                                            taskList: groupList
+                                        }
                                     }
                                 }
                             }
@@ -679,6 +751,12 @@ PlasmoidItem {
             backend,
         });
         return contextMenuComponent.createObject(rootTask, initialArgs);
+    }
+
+    function switchToDesktop(index: int): void {
+        if (index >= 0 && index < virtualDesktopInfo.desktopIds.length) {
+            desktopPagerModel.changePage(index);
+        }
     }
 
     function shouldBeMirrored(reverseMode, layoutDirection, vertical): bool {
