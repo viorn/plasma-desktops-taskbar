@@ -71,6 +71,95 @@ PlasmoidItem {
         return true;
     }
 
+    // fork: закрепление приложения за конкретным рабочим столом.
+    // Хранится в конфиге как список строк "desktopId=launcherUrl".
+    // По умолчанию список пуст: закрепления штатного виджета не наследуются.
+    readonly property var launcherDesktops: Plasmoid.configuration.launcherDesktops
+
+    // entries передаётся аргументом — иначе QML не увидит зависимость от конфига.
+    function launchersFor(desktopId: string, entries: var): var {
+        const result = [];
+        if (!entries) {
+            return result;
+        }
+        const prefix = String(desktopId) + "=";
+        for (let i = 0; i < entries.length; ++i) {
+            const entry = String(entries[i]);
+            if (entry.startsWith(prefix)) {
+                result.push(entry.substring(prefix.length));
+            }
+        }
+        return result;
+    }
+
+    // ?icon=… в URL — только подсказка для иконки, для сравнения её отбрасываем.
+    function launcherKey(url): string {
+        const value = String(url);
+        const iconQuery = value.indexOf("?icon=");
+        return iconQuery === -1 ? value : value.substring(0, iconQuery);
+    }
+
+    function hasLauncherOnDesktop(url: url, desktopId: string, entries: var): bool {
+        const key = tasks.launcherKey(url);
+        return tasks.launchersFor(desktopId, entries).some(entry => entry === key);
+    }
+
+    function addLauncherToDesktop(url: url, desktopId: string): void {
+        if (Plasmoid.immutability === PlasmaCore.Types.SystemImmutable || !desktopId) {
+            return;
+        }
+        const entries = tasks.launcherDesktops ? Array.from(tasks.launcherDesktops).map(String) : [];
+        const entry = String(desktopId) + "=" + tasks.launcherKey(url);
+        if (entries.indexOf(entry) !== -1) {
+            return;
+        }
+        entries.push(entry);
+        Plasmoid.configuration.launcherDesktops = entries;
+    }
+
+    function removeLauncherFromDesktop(url: url, desktopId: string): void {
+        if (Plasmoid.immutability === PlasmaCore.Types.SystemImmutable || !desktopId) {
+            return;
+        }
+        const entries = tasks.launcherDesktops ? Array.from(tasks.launcherDesktops).map(String) : [];
+        const entry = String(desktopId) + "=" + tasks.launcherKey(url);
+        const index = entries.indexOf(entry);
+        if (index === -1) {
+            return;
+        }
+        entries.splice(index, 1);
+        Plasmoid.configuration.launcherDesktops = entries;
+    }
+
+    // fork: запуск приложения из группы другого стола — сначала переключаемся
+    // на этот стол, потом запускаем (иначе окно откроется на текущем).
+    // index — QModelIndex строки лончера в модели группы.
+    property var pendingLaunch: null
+    property string pendingLaunchDesktop: ""
+    property int pendingLaunchTries: 0
+
+    function launchOnDesktop(index, taskModel, modifiers = 0): void {
+        const desktop = taskModel ? taskModel.virtualDesktop : undefined;
+        const position = desktop === undefined ? -1 : virtualDesktopInfo.desktopIds.indexOf(desktop);
+        const activate = () => {
+            if (modifiers & Qt.ShiftModifier) {
+                taskModel.requestNewInstance(index);
+            } else {
+                taskModel.requestActivate(index);
+            }
+        };
+        if (position === -1 || desktop === virtualDesktopInfo.currentDesktop) {
+            activate();
+            return;
+        }
+        tasks.pendingLaunch = activate;
+        tasks.pendingLaunchDesktop = String(desktop);
+        tasks.pendingLaunchTries = 0;
+        tasks.switchToDesktop(position);
+        // Ждём, пока KWin действительно переключит стол (см. launchTimer).
+        launchTimer.restart();
+    }
+
     property Task toolTipOpenedByClick
     property Task toolTipAreaItem
 
@@ -383,6 +472,33 @@ PlasmoidItem {
             active: pulseAudioComponent.status === Component.Ready
         }
 
+        // fork: отложенный запуск приложения после переключения рабочего стола
+        // (см. tasks.launchOnDesktop).
+        Timer {
+            id: launchTimer
+
+            interval: 100
+            repeat: true
+
+            onTriggered: {
+                // Ждём, пока KWin применит переключение (но не дольше ~2 с),
+                // иначе окно успеет открыться на старом рабочем столе.
+                if (tasks.pendingLaunchDesktop !== ""
+                    && String(virtualDesktopInfo.currentDesktop) !== tasks.pendingLaunchDesktop
+                    && ++tasks.pendingLaunchTries < 20) {
+                    return;
+                }
+                launchTimer.stop();
+                const launch = tasks.pendingLaunch;
+                tasks.pendingLaunch = null;
+                tasks.pendingLaunchDesktop = "";
+                tasks.pendingLaunchTries = 0;
+                if (launch) {
+                    launch();
+                }
+            }
+        }
+
         // fork: обновление имён рабочих столов (см. комментарий у tasks.desktopNames).
         // Список от VirtualDesktopInfo может меняться «на месте», поэтому каждый
         // тик делаем обычный JS-массив и сравниваем его с текущей копией.
@@ -635,9 +751,9 @@ PlasmoidItem {
                                 activity: activityInfo.currentActivity
                                 screenGeometry: Plasmoid.containment.screenGeometry
 
-                                // Лончеры про рабочие столы ничего не знают, поэтому пока
-                                // показываем их только в группе текущего стола.
-                                launcherList: groupRoot.current ? tasksModel.launcherList : []
+                                // fork: закрепления хранятся за конкретным столом
+                                // (конфиг launcherDesktops), список по умолчанию пуст.
+                                launcherList: tasks.launchersFor(groupRoot.modelData, tasks.launcherDesktops)
 
                                 sortMode: tasksModel.sortMode
                                 groupMode: tasksModel.groupMode
@@ -713,20 +829,35 @@ PlasmoidItem {
 
     readonly property bool supportsLaunchers: true
 
+    // fork: в режиме групп «закрепить» = закрепить за текущим столом
+    // (drag-n-drop .desktop на виджет и запросы извне идут сюда).
     function hasLauncher(url: url): bool {
+        if (tasks.groupByDesktop) {
+            return tasks.hasLauncherOnDesktop(url, virtualDesktopInfo.currentDesktop, tasks.launcherDesktops);
+        }
         return tasksModel.launcherPosition(url) !== -1;
     }
 
     function addLauncher(url: url): void {
-        if (Plasmoid.immutability !== PlasmaCore.Types.SystemImmutable) {
-            tasksModel.requestAddLauncher(url);
+        if (Plasmoid.immutability === PlasmaCore.Types.SystemImmutable) {
+            return;
         }
+        if (tasks.groupByDesktop) {
+            tasks.addLauncherToDesktop(url, virtualDesktopInfo.currentDesktop);
+            return;
+        }
+        tasksModel.requestAddLauncher(url);
     }
 
     function removeLauncher(url: url): void {
-        if (Plasmoid.immutability !== PlasmaCore.Types.SystemImmutable) {
-            tasksModel.requestRemoveLauncher(url);
+        if (Plasmoid.immutability === PlasmaCore.Types.SystemImmutable) {
+            return;
         }
+        if (tasks.groupByDesktop) {
+            tasks.removeLauncherFromDesktop(url, virtualDesktopInfo.currentDesktop);
+            return;
+        }
+        tasksModel.requestRemoveLauncher(url);
     }
 
     // This is called by plasmashell in response to a Meta+number shortcut.
@@ -738,7 +869,7 @@ PlasmoidItem {
 
         const task = tasks.visibleTaskItems()[index];
         if (task) {
-            TaskTools.activateTask(task.modelIndex(), task.model, null, task, Plasmoid, this, effectWatcher.registered);
+            TaskTools.activateTask(task.modelIndex(), task.model, null, task, Plasmoid, this, effectWatcher.registered, task.taskModel);
         }
     }
 

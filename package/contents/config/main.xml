@@ -144,6 +144,10 @@
       <label>Whether to lay out task buttons grouped by virtual desktop, with a desktop indicator (fork feature).</label>
       <default>true</default>
     </entry>
+    <entry name="launcherDesktops" type="StringList">
+      <label>Launchers pinned to a specific virtual desktop, as "desktopId=launcherUrl" entries (fork feature). Empty by default: the pinned list of the upstream widget is not inherited.</label>
+      <default></default>
+    </entry>
   </group>
 
 </kcfg>

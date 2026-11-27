@@ -78,6 +78,12 @@ function activateTask(index, model, modifiers, task, plasmoid, tasks, windowView
     // В форке у каждого рабочего стола своя TasksModel, поэтому запросы идут
     // в модель того списка, из которого пришёл клик (а не в глобальную).
     const tasksModel = taskModel || tasks.tasksModel;
+    // fork: закреплённое за столом приложение запускаем на его столе —
+    // сначала переключаемся, потом запускаем (см. tasks.launchOnDesktop).
+    if (model.IsLauncher && tasks.groupByDesktop) {
+        tasks.launchOnDesktop(index, tasksModel, modifiers);
+        return;
+    }
     if (modifiers & Qt.ShiftModifier) {
         tasksModel.requestNewInstance(index);
         return;

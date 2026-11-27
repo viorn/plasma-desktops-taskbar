@@ -32,6 +32,15 @@ PlasmaExtras.Menu {
 
     property bool showAllPlaces: false
 
+    // fork: закрепление за конкретным рабочим столом (конфиг launcherDesktops).
+    readonly property bool perDesktopLaunchers: Plasmoid.configuration.groupByDesktop
+    readonly property string groupDesktopId: taskModel && taskModel.virtualDesktop !== undefined
+        ? String(taskModel.virtualDesktop) : ""
+    readonly property string groupDesktopName: {
+        const position = virtualDesktopInfo.desktopIds.indexOf(groupDesktopId);
+        return position === -1 ? "" : tasks.desktopLabel(position, tasks.desktopNames);
+    }
+
     placement: {
         if (Plasmoid.location === PlasmaCore.Types.LeftEdge) {
             return PlasmaExtras.Menu.RightPosedTopAlignedPopup;
@@ -493,12 +502,17 @@ PlasmaExtras.Menu {
             && !get(atm.IsLauncher)
             && !get(atm.IsStartup)
             && Plasmoid.immutability !== PlasmaCore.Types.SystemImmutable
-            && (activityInfo.numberOfRunningActivities < 2)
-            && !doesBelongToCurrentActivity()
+            && (menu.perDesktopLaunchers
+                ? menu.groupDesktopId !== ""
+                  && !tasks.hasLauncherOnDesktop(get(atm.LauncherUrl), menu.groupDesktopId, tasks.launcherDesktops)
+                : (activityInfo.numberOfRunningActivities < 2)
+                  && !doesBelongToCurrentActivity())
 
         enabled: visualParent && get(atm.LauncherUrlWithoutIcon).toString() !== ""
 
-        text: i18n("&Pin to Task Manager")
+        text: menu.perDesktopLaunchers
+            ? i18n("&Pin to Desktop \"%1\"", menu.groupDesktopName)
+            : i18n("&Pin to Task Manager")
         icon: "window-pin"
 
         function doesBelongToCurrentActivity(): bool {
@@ -507,7 +521,11 @@ PlasmaExtras.Menu {
         }
 
         onClicked: {
-            taskModel.requestAddLauncher(get(atm.LauncherUrl));
+            if (menu.perDesktopLaunchers) {
+                tasks.addLauncherToDesktop(get(atm.LauncherUrl), menu.groupDesktopId);
+            } else {
+                taskModel.requestAddLauncher(get(atm.LauncherUrl));
+            }
         }
     }
 
@@ -593,14 +611,23 @@ PlasmaExtras.Menu {
         visible: (visualParent
                 && get(atm.IsStartup) !== true
                 && Plasmoid.immutability !== PlasmaCore.Types.SystemImmutable
-                && !launcherToggleAction.visible
-                && activityInfo.numberOfRunningActivities < 2)
+                && (menu.perDesktopLaunchers
+                    ? menu.groupDesktopId !== ""
+                      && tasks.hasLauncherOnDesktop(get(atm.LauncherUrlWithoutIcon), menu.groupDesktopId, tasks.launcherDesktops)
+                    : !launcherToggleAction.visible
+                      && activityInfo.numberOfRunningActivities < 2))
 
-        text: i18n("Unpin from Task Manager")
+        text: menu.perDesktopLaunchers
+            ? i18n("Unpin from Desktop \"%1\"", menu.groupDesktopName)
+            : i18n("Unpin from Task Manager")
         icon: "window-unpin"
 
         onClicked: {
-            taskModel.requestRemoveLauncher(get(atm.LauncherUrlWithoutIcon));
+            if (menu.perDesktopLaunchers) {
+                tasks.removeLauncherFromDesktop(get(atm.LauncherUrlWithoutIcon), menu.groupDesktopId);
+            } else {
+                taskModel.requestRemoveLauncher(get(atm.LauncherUrlWithoutIcon));
+            }
         }
     }
 
