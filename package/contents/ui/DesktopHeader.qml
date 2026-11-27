@@ -18,6 +18,8 @@ Item {
     required property var tasksRoot
     required property string desktopName
     required property bool current
+    // Форк: сюда тащат задачу из другой группы — подсвечиваем стол-получатель.
+    property bool dropTarget: false
 
     signal activated()
 
@@ -46,7 +48,7 @@ Item {
         anchors.margins: Math.round(Kirigami.Units.smallSpacing / 2)
         radius: Kirigami.Units.smallSpacing
         color: Kirigami.Theme.highlightColor
-        opacity: header.current ? 0.3 : 0
+        opacity: header.dropTarget ? 0.45 : (header.current ? 0.3 : 0)
     }
 
     Text {

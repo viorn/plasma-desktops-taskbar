@@ -117,6 +117,60 @@ PlasmoidItem {
         Plasmoid.configuration.launcherDesktops = entries;
     }
 
+    // Перезаписывает закрепления одного стола, сохраняя порядок остальных.
+    function setLaunchersFor(desktopId: string, urls: var): void {
+        const all = tasks.launcherDesktops ? Array.from(tasks.launcherDesktops).map(String) : [];
+        const prefix = String(desktopId) + "=";
+        const result = [];
+        let inserted = false;
+        for (let i = 0; i < all.length; ++i) {
+            if (String(all[i]).startsWith(prefix)) {
+                if (!inserted) {
+                    for (let j = 0; j < urls.length; ++j) {
+                        result.push(prefix + tasks.launcherKey(urls[j]));
+                    }
+                    inserted = true;
+                }
+            } else {
+                result.push(String(all[i]));
+            }
+        }
+        if (!inserted) {
+            for (let j = 0; j < urls.length; ++j) {
+                result.push(prefix + tasks.launcherKey(urls[j]));
+            }
+        }
+        Plasmoid.configuration.launcherDesktops = result;
+    }
+
+    // Перестановка закрепления внутри стола (drag-n-drop по иконкам).
+    function reorderLauncherPin(desktopId: string, fromUrl, toUrl, after: bool): void {
+        const urls = tasks.launchersFor(desktopId, tasks.launcherDesktops);
+        const fromKey = tasks.launcherKey(fromUrl);
+        const toKey = tasks.launcherKey(toUrl);
+        if (urls.indexOf(fromKey) === -1 || urls.indexOf(toKey) === -1 || fromKey === toKey) {
+            return;
+        }
+        urls.splice(urls.indexOf(fromKey), 1);
+        const to = urls.indexOf(toKey);
+        urls.splice(after ? to + 1 : to, 0, fromKey);
+        tasks.setLaunchersFor(desktopId, urls);
+    }
+
+    // Перенос закрепления на другой рабочий стол.
+    function moveLauncherPin(url, fromDesktopId: string, toDesktopId: string): void {
+        if (!fromDesktopId || !toDesktopId || fromDesktopId === toDesktopId) {
+            return;
+        }
+        const key = tasks.launcherKey(url);
+        const all = tasks.launcherDesktops ? Array.from(tasks.launcherDesktops).map(String) : [];
+        const fromEntry = String(fromDesktopId) + "=" + key;
+        const toEntry = String(toDesktopId) + "=" + key;
+        const result = all.filter(entry => entry !== fromEntry && entry !== toEntry);
+        result.push(toEntry);
+        Plasmoid.configuration.launcherDesktops = result;
+    }
+
     function removeLauncherFromDesktop(url: url, desktopId: string): void {
         if (Plasmoid.immutability === PlasmaCore.Types.SystemImmutable || !desktopId) {
             return;
@@ -130,6 +184,11 @@ PlasmoidItem {
         entries.splice(index, 1);
         Plasmoid.configuration.launcherDesktops = entries;
     }
+
+    // fork: что под курсором при перетаскивании внутри виджета — нужно, чтобы
+    // переносить задачи и закрепления между группами (рабочими столами).
+    property var dragOverItem: null
+    property var dragOverGroup: null
 
     // fork: запуск приложения из группы другого стола — сначала переключаемся
     // на этот стол, потом запускаем (иначе окно откроется на текущем).
@@ -320,6 +379,58 @@ PlasmoidItem {
             }
         }
         return null;
+    }
+
+    // Группа (рабочий стол) под точкой в координатах container.
+    function groupAt(container, x, y): var {
+        for (let i = 0; i < desktopGroupRepeater.count; ++i) {
+            const group = desktopGroupRepeater.itemAt(i);
+            if (!group || !group.visible) {
+                continue;
+            }
+
+            const point = group.mapFromItem(container, x, y);
+            if (point.x >= 0 && point.y >= 0 && point.x <= group.width && point.y <= group.height) {
+                return group;
+            }
+        }
+        return null;
+    }
+
+    // Отпускание перетаскиваемой внутри виджета задачи: перенос на другой стол
+    // или перестановка закрепления. Порядок закреплений живёт в конфиге, поэтому
+    // переставляем не модель, а записи launcherDesktops.
+    function handleInternalDrop(source, overItem, overGroup): void {
+        if (!source || !source.model) {
+            return;
+        }
+
+        const sourceDesktop = source.taskModel && source.taskModel.virtualDesktop !== undefined
+            ? String(source.taskModel.virtualDesktop) : "";
+        const targetDesktop = overGroup ? String(overGroup.modelData) : "";
+        const url = source.model.LauncherUrlWithoutIcon;
+
+        if (source.model.IsLauncher === true) {
+            if (targetDesktop && targetDesktop !== sourceDesktop) {
+                tasks.moveLauncherPin(url, sourceDesktop, targetDesktop);
+            } else if (overItem && overItem !== source && overItem.model
+                       && overItem.model.IsLauncher === true) {
+                tasks.reorderLauncherPin(sourceDesktop, url,
+                    overItem.model.LauncherUrlWithoutIcon, overItem.index > source.index);
+            }
+            return;
+        }
+
+        if (!targetDesktop || targetDesktop === sourceDesktop) {
+            return;
+        }
+
+        // Окно переезжает на другой стол; если приложение было закреплено
+        // за исходным столом — закрепление едет вместе с ним.
+        if (tasks.hasLauncherOnDesktop(url, sourceDesktop, tasks.launcherDesktops)) {
+            tasks.moveLauncherPin(url, sourceDesktop, targetDesktop);
+        }
+        source.taskModel.requestVirtualDesktops(source.modelIndex(), [targetDesktop]);
     }
 
     readonly property TaskManager.TasksModel tasksModel: TaskManager.TasksModel {
@@ -822,6 +933,7 @@ PlasmoidItem {
                                 DesktopHeader {
                                     desktopName: tasks.desktopLabel(groupRoot.index, tasks.desktopNames)
                                     current: groupRoot.current
+                                    dropTarget: tasks.dragOverGroup === groupRoot
                                     tasksRoot: tasks
                                     onActivated: tasks.switchToDesktop(groupRoot.index)
                                 }

@@ -56,6 +56,15 @@ DropArea {
             above = dropArea.itemAtPoint(event.x, event.y);
         }
 
+        // Форк: запоминаем, над чем находится перетаскиваемая задача — по этому
+        // месту отпускание решает, куда её перенести (см. tasks.handleInternalDrop).
+        // Делаем это до проверки на null: над подписью пустого стола задачи нет,
+        // но перенести её туда всё равно можно.
+        if (tasks.dragSource) {
+            tasks.dragOverItem = above;
+            tasks.dragOverGroup = tasks.groupAt(dropArea, event.x, event.y);
+        }
+
         if (!above) {
             hoveredItem = null;
             activationTimer.stop();
@@ -83,6 +92,11 @@ DropArea {
         }
 
         const taskModel = above.taskModel || tasksModel;
+        if (tasks.groupByDesktop && tasks.dragSource?.model?.IsLauncher) {
+            // Порядок закреплений хранится в конфиге, а не в модели: переставим
+            // его одним разом по отпусканию, иначе модель и конфиг разъедутся.
+            return;
+        }
         if (taskModel.sortMode === TaskManager.TasksModel.SortManual && tasks.dragSource) {
             // Reject drags between different TaskList instances.
             if (tasks.dragSource.parent !== above.parent) {
@@ -114,8 +128,10 @@ DropArea {
     }
 
     onDropped: event => {
-        // Reject internal drops.
+        // Внутренний drop: перенос задачи или закрепления в другую группу
+        // (рабочий стол) либо перестановка закреплений.
         if (event.formats.indexOf("application/x-orgkdeplasmataskmanager_taskbuttonitem") >= 0) {
+            tasks.handleInternalDrop(tasks.dragSource, tasks.dragOverItem, tasks.dragOverGroup);
             event.accepted = false;
             return;
         }
@@ -139,6 +155,8 @@ DropArea {
             if (!dragSource) {
                 ignoredItem = null;
                 ignoreItemTimer.stop();
+                tasks.dragOverItem = null;
+                tasks.dragOverGroup = null;
             }
         }
     }
