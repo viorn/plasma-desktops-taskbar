@@ -251,8 +251,14 @@ PlasmoidItem {
         }
     }
 
-    Layout.fillWidth: vertical ? true : Plasmoid.configuration.fill
-    Layout.fillHeight: !vertical ? true : Plasmoid.configuration.fill
+    // Форк: в режиме групп ширину задаёт содержимое (groupsRow), иначе панель
+    // держала апплет на минимуме: Layout.preferredWidth считался как
+    // Math.min(width, groupsRow.width), то есть от собственной ширины, и
+    // «залипал» на Layout.minimumWidth (в живой панели апплет был 30x30 при
+    // контенте 640+ px — все группы рисовались мимо него, а перетаскивание
+    // работало только в первых 30 px, т.е. в начале первой группы).
+    Layout.fillWidth: vertical ? true : (groupByDesktop ? false : Plasmoid.configuration.fill)
+    Layout.fillHeight: !vertical ? true : (groupByDesktop ? false : Plasmoid.configuration.fill)
     Layout.minimumWidth: {
         if (shouldShrinkToZero) {
             return Kirigami.Units.gridUnit; // For edit mode
@@ -275,7 +281,7 @@ PlasmoidItem {
             return Kirigami.Units.gridUnit * 10;
         }
         if (groupByDesktop) {
-            return Math.min(width, groupsRow.width);
+            return groupsRow.width;
         }
         return taskList.Layout.maximumWidth
     }
@@ -285,7 +291,7 @@ PlasmoidItem {
         }
         if (vertical) {
             if (groupByDesktop) {
-                return Math.min(height, groupsRow.height);
+                return groupsRow.height;
             }
             return taskList.Layout.maximumHeight
         }
@@ -763,7 +769,14 @@ PlasmoidItem {
         MouseHandler {
             id: mouseHandler
 
-            anchors.fill: parent
+            // Форк: прямоугольник апплета в панели может оказаться меньше
+            // содержимого (см. Layout.preferredWidth), а область перетаскивания
+            // должна совпадать с видимыми группами, иначе drop-события
+            // достаются только первым пикселям первой группы.
+            x: 0
+            y: 0
+            width: tasks.groupByDesktop ? taskListHost.width : parent.width
+            height: tasks.groupByDesktop ? taskListHost.height : parent.height
 
             target: tasks.groupByDesktop ? taskListHost : taskList
             childAtProvider: tasks.groupByDesktop ? (x, y) => tasks.taskItemAt(taskListHost, x, y) : null
@@ -1099,6 +1112,14 @@ PlasmoidItem {
         requestLayout.connect(iconGeometryTimer.restart);
         windowsHovered.connect(backend.windowsHovered);
         activateWindowView.connect(backend.activateWindowView);
+        tasks.dndLog("geom tasks=" + Math.round(tasks.width) + "x" + Math.round(tasks.height)
+            + " mouse=" + Math.round(mouseHandler.width) + "x" + Math.round(mouseHandler.height)
+            + " host=" + Math.round(taskListHost.width) + "x" + Math.round(taskListHost.height)
+            + " grid=" + Math.round(groupsRow.width)
+            + " fill=" + Plasmoid.configuration.fill
+            + " group=" + Plasmoid.configuration.groupByDesktop
+            + " ff=" + tasks.Plasmoid.formFactor
+            + " v=" + tasks.vertical);
     }
 
     Component.onDestruction: {

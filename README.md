@@ -125,6 +125,24 @@ readonly property bool iconsOnly: ForkIdentity.isIconsOnly(Plasmoid.pluginName)
 - Внутри одного стола перетаскивание окон работает как в апстриме (только при
   «Сортировать вручную»), между группами — всегда.
 
+### Размер виджета в панели
+
+В режиме групп ширину/высоту задаёт содержимое (`Layout.preferredWidth: groupsRow.width`,
+`fillWidth/fillHeight = false`). Раньше там стояло `Math.min(width, groupsRow.width)`, то есть
+ссылка на собственную ширину апплета: биндинг залипал на `Layout.minimumWidth`, и в живой
+панели апплет занимал 30x30 px, рисуя группы мимо себя (Qt не обрезает детей без `clip`).
+Снаружи это выглядело нормально — но область перетаскивания тоже была 30x30, поэтому
+drag-n-drop «работал только в первом столе и только в начало списка».
+Проверить размер можно без мыши:
+
+```bash
+qdbus6 org.kde.plasmashell /PlasmaShell org.kde.PlasmaShell.evaluateScript \
+  'for (var i=0;i<panels().length;++i){var w=panels()[i].widgets();for(var j=0;j<w.length;++j)print(w[j].id+" "+w[j].type+" "+w[j].geometry)}'
+```
+
+В `plasmawindowed` этого дефекта не видно: окно подгоняется под `preferred*`, поэтому
+песочница показывала «всё работает».
+
 ### Почему в живой панели drag-n-drop вёл себя иначе, чем в `plasmawindowed`
 
 - Апстримный `MouseHandler.qml` внутренний drop **отклоняет** (`accepted = false`) и меняет
