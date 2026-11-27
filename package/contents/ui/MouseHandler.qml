@@ -114,8 +114,9 @@ DropArea {
                     || tasks.isPinnedOnSourceDesktop(tasks.dragSource))) {
             // Порядок закреплений живёт в конфиге: move() в модели разошёлся бы
             // с ним (libtaskmanager потом сдвигает строки ещё раз, и иконка
-            // возвращается на место), поэтому переставляем записи конфига по
-            // завершении драга. Живого «разъезжания» под курсором поэтому нет.
+            // возвращается на место). Переставляем записи конфига — сразу, пока
+            // курсор над другой закреплённой иконкой, и окончательно по отпусканию.
+            tasks.reorderPinLive(tasks.dragSource, above);
             return;
         }
         if (taskModel.sortMode === TaskManager.TasksModel.SortManual && tasks.dragSource) {
@@ -192,6 +193,7 @@ DropArea {
             } else {
                 draggedTask = dragSource;
                 tasks.dragApplied = false;
+                tasks.dragPinnedAim = null;
                 tasks.dndLog("drag start app=" + (dragSource.model ? dragSource.model.AppName : "?")
                     + " launcher=" + (dragSource.model ? dragSource.model.IsLauncher : "?"));
             }
