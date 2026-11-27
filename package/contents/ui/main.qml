@@ -192,6 +192,9 @@ PlasmoidItem {
     // Перенос уже применён для текущего драга — защита от двойного применения
     // (drop и конец драга приходят в неопределённом порядке).
     property bool dragApplied: false
+    // Порядок закреплённых уже менялся живьём во время этого драга — по
+    // отпусканию повторно не переставляем (иначе сдвиг на один шаг).
+    property bool dragPinMovedLive: false
     // Диагностика drag-n-drop: при true все шаги перетаскивания пишутся в
     // journal (journalctl --user -u plasma-plasmashell, строки «[dnd]»).
     // По умолчанию выключена — включать только на время отладки.
@@ -432,6 +435,41 @@ PlasmoidItem {
             tasks.launcherDesktops);
     }
 
+    // Живая перестановка закреплённых под курсором: порядок должен меняться сразу,
+    // как в апстриме. Но одного move() мало — libtaskmanager переписал бы
+    // launcherList из модели и вернул прежний порядок (иконка «отскакивает»,
+    // см. D18), а одной записи конфига мало — модель держит свою карту ручной
+    // сортировки (sortedPreFilterRows) и обновляет её только в move(): визуально
+    // порядок применялся с задержкой в секунды. Поэтому делаем и то, и другое.
+    function applyPinDragStep(source, above): bool {
+        if (!source || !source.model || !above || !above.model || above === source) {
+            return false;
+        }
+        if (!source.taskModel || !above.taskModel
+                || String(source.taskModel.virtualDesktop) !== String(above.taskModel.virtualDesktop)) {
+            return false;
+        }
+        if (!tasks.isPinnedOnSourceDesktop(source) || !tasks.isPinnedOnSourceDesktop(above)) {
+            return false;
+        }
+        if (source.index === above.index) {
+            return false;
+        }
+
+        const sourceDesktop = String(source.taskModel.virtualDesktop);
+        const url = source.model.LauncherUrlWithoutIcon;
+        const overUrl = above.model.LauncherUrlWithoutIcon;
+        const after = above.index > source.index;
+
+        tasks.dragPinMovedLive = true;
+
+        // 1. Немедленный отклик + обновление внутренней карты сортировки.
+        source.taskModel.move(source.index, above.index);
+        // 2. Фиксация порядка в конфиге (единственный источник истины).
+        tasks.reorderLauncherPin(sourceDesktop, url, overUrl, after);
+        return true;
+    }
+
     // Завершение перетаскивания внутри виджета: перенос задачи или закрепления
     // в другую группу (рабочий стол) либо перестановка закреплений.
     // Порядок закреплений живёт в конфиге (launcherDesktops), поэтому переставляем
@@ -485,7 +523,8 @@ PlasmoidItem {
         // Тот же стол: порядок закреплений живёт в конфиге, поэтому переставляем
         // запись конфига, а не строку модели (иначе модель и конфиг разъедутся
         // и иконка вернётся на место).
-        if (!pinned || !overItem || overItem === source || !overItem.model) {
+        if (!pinned || tasks.dragPinMovedLive || !overItem || overItem === source
+                || !overItem.model) {
             return;
         }
 
