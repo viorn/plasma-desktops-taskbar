@@ -432,34 +432,6 @@ PlasmoidItem {
             tasks.launcherDesktops);
     }
 
-    // Живая перестановка закреплений под курсором (как в апстриме, где порядок
-    // меняет model.move()). Порядок живёт в конфиге, но libtaskmanager на
-    // изменение launcherList двигает строки через moveRows, поэтому делегат,
-    // который тащат, не пересоздаётся (проверено probe51: same=true).
-    // Гистерезис по последней цели: после перестановки под курсором оказывается
-    // соседняя иконка, и без этого порядка «дрожал» бы.
-    property var dragPinnedAim: null
-
-    function reorderPinLive(source, above): void {
-        if (!source || !source.model || !above || !above.model || above === source) {
-            return;
-        }
-        if (above === tasks.dragPinnedAim) {
-            return;
-        }
-        if (!tasks.isPinnedOnSourceDesktop(source) || !tasks.isPinnedOnSourceDesktop(above)) {
-            return;
-        }
-        if (!source.taskModel || !above.taskModel
-                || String(source.taskModel.virtualDesktop) !== String(above.taskModel.virtualDesktop)) {
-            return;
-        }
-        tasks.dragPinnedAim = above;
-        tasks.reorderLauncherPin(String(source.taskModel.virtualDesktop),
-            source.model.LauncherUrlWithoutIcon, above.model.LauncherUrlWithoutIcon,
-            above.index > source.index);
-    }
-
     // Завершение перетаскивания внутри виджета: перенос задачи или закрепления
     // в другую группу (рабочий стол) либо перестановка закреплений.
     // Порядок закреплений живёт в конфиге (launcherDesktops), поэтому переставляем
@@ -470,7 +442,6 @@ PlasmoidItem {
     function finishDrag(source, overItem, overGroup): void {
         tasks.dragOverGroup = null;
         tasks.dragOverItem = null;
-        tasks.dragPinnedAim = null;
 
         if (!source || !source.model) {
             tasks.dndLog("finish: no source");
