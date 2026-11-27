@@ -26,6 +26,8 @@ Loader {
 
     property Task parentTask
     property /*QModelIndex*/var rootIndex
+    // Модель той группы, к которой относится задача (в форке их несколько).
+    property var taskModel: tasksModel
 
     property string appName
     property int pidParent
@@ -70,6 +72,7 @@ Loader {
         id: singleTooltip
 
         ToolTipInstance {
+            taskModel: toolTipDelegate.taskModel
             index: 0 // TODO: maybe set to -1, because that's what the component checks against?
             submodelIndex: toolTipDelegate.rootIndex
             appPid: toolTipDelegate.pidParent
@@ -118,7 +121,7 @@ Loader {
                 readonly property real estimatedWidth: (toolTipDelegate.isVerticalPanel || !Plasmoid.configuration.showToolTips ? 1 : count) * (toolTipDelegate.tooltipInstanceMaximumWidth + Kirigami.Units.gridUnit) - Kirigami.Units.gridUnit
                 readonly property real estimatedHeight: (toolTipDelegate.isVerticalPanel || !Plasmoid.configuration.showToolTips ? count : 1) * (Plasmoid.configuration.showToolTips ? (toolTipDelegate.tooltipInstanceMaximumWidth / 2 + Kirigami.Units.gridUnit) : Kirigami.Units.gridUnit * 2) - Kirigami.Units.gridUnit
 
-                model: tasksModel
+                model: taskModel
 
                 rootIndex: toolTipDelegate.rootIndex
                 onRootIndexChanged: groupToolTipListView.positionViewAtBeginning() // Fix a visual glitch (when the mouse moves from a tooltip with a moved scrollbar to another tooltip without a scrollbar)
@@ -126,7 +129,9 @@ Loader {
                 delegate: ToolTipInstance {
                     required property var model
 
-                    submodelIndex: tasksModel.makeModelIndex(toolTipDelegate.rootIndex.row, index)
+                    taskModel: toolTipDelegate.taskModel
+
+                    submodelIndex: taskModel.makeModelIndex(toolTipDelegate.rootIndex.row, index)
                     appPid: model.AppPid
                     // 'display' is required already
                     isMinimized: model.IsMinimized

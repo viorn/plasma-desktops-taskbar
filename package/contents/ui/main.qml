@@ -37,6 +37,9 @@ PlasmoidItem {
     readonly property bool vertical: Plasmoid.formFactor === PlasmaCore.Types.Vertical
     // fork: «кто мы такие» определяется в одном месте — code/identity.js
     readonly property bool iconsOnly: ForkIdentity.isIconsOnly(Plasmoid.pluginName)
+    // fork: задачи раскладываются группами по виртуальным рабочим столам,
+    // а чипы столов работают как пейджер (см. README).
+    readonly property bool groupByDesktop: Plasmoid.configuration.groupByDesktop
 
     property Task toolTipOpenedByClick
     property Task toolTipAreaItem
@@ -81,6 +84,9 @@ PlasmoidItem {
         if (vertical) {
             return Kirigami.Units.gridUnit * 10;
         }
+        if (groupByDesktop) {
+            return Math.min(width, groupsRow.width);
+        }
         return taskList.Layout.maximumWidth
     }
     Layout.preferredHeight: {
@@ -88,6 +94,9 @@ PlasmoidItem {
             return 0.01;
         }
         if (vertical) {
+            if (groupByDesktop) {
+                return Math.min(height, groupsRow.height);
+            }
             return taskList.Layout.maximumHeight
         }
         return Kirigami.Units.gridUnit * 2;
@@ -114,10 +123,49 @@ PlasmoidItem {
             const task = taskItems[i];
 
             if (!task.model.IsLauncher && !task.model.IsStartup) {
-                tasksModel.requestPublishDelegateGeometry(tasksModel.makeModelIndex(task.index),
+                const model = task.taskModel || tasksModel;
+                model.requestPublishDelegateGeometry(model.makeModelIndex(task.index),
                     backend.globalRect(task), task);
             }
         }
+    }
+
+    // Все Task-элементы в порядке отображения: либо один список (апстрим),
+    // либо группы по рабочим столам в порядке desktopIds.
+    function visibleTaskItems(): var {
+        if (!groupByDesktop) {
+            return taskList.children;
+        }
+
+        let items = [];
+        for (let i = 0; i < desktopGroupRepeater.count; ++i) {
+            const group = desktopGroupRepeater.itemAt(i);
+            if (group && group.visible && group.list) {
+                items = items.concat(group.list.children);
+            }
+        }
+        return items;
+    }
+
+    // Поиск задачи под точкой (координаты в системe container) — для MouseHandler,
+    // который иначе умеет искать только в одном списке.
+    function taskItemAt(container, x, y): var {
+        for (let i = 0; i < desktopGroupRepeater.count; ++i) {
+            const group = desktopGroupRepeater.itemAt(i);
+            if (!group || !group.visible || !group.list) {
+                continue;
+            }
+
+            const list = group.list;
+            const point = list.mapFromItem(container, x, y);
+            if (point.x >= 0 && point.y >= 0 && point.x <= list.width && point.y <= list.height) {
+                const item = list.childAt(point.x, point.y);
+                if (item) {
+                    return item;
+                }
+            }
+        }
+        return null;
     }
 
     readonly property TaskManager.TasksModel tasksModel: TaskManager.TasksModel {
@@ -130,8 +178,9 @@ PlasmoidItem {
 
             let startupsWithLaunchers = 0;
 
-            for (let i = 0; i < taskRepeater.count; ++i) {
-                const item = taskRepeater.itemAt(i);
+            const items = tasks.visibleTaskItems();
+            for (let i = 0; i < items.length; ++i) {
+                const item = items[i];
 
                 // During destruction required properties such as item.model can go null for a while,
                 // so in paths that can trigger on those moments, they need to be guarded
@@ -239,8 +288,12 @@ PlasmoidItem {
 
             onTriggered: {
                 const task = parent as Task;
-                if (task) {
-                    tasksModel.requestPublishDelegateGeometry(task.modelIndex(), backend.globalRect(task), task);
+                // В форке у задачи своя модель (группа рабочего стола), поэтому индекс
+                // строим по ней. Вызов task.modelIndex() здесь ломается, когда контекст
+                // делегата уже невалиден (задача успела пересоздаться).
+                const model = task ? (task.taskModel || tasksModel) : null;
+                if (task && model) {
+                    model.requestPublishDelegateGeometry(model.makeModelIndex(task.index), backend.globalRect(task), task);
                 }
                 destroy();
             }
@@ -298,7 +351,7 @@ PlasmoidItem {
             repeat: false
 
             onTriggered: {
-                tasks.publishIconGeometries(taskList.children, tasks);
+                tasks.publishIconGeometries(tasks.visibleTaskItems(), tasks);
             }
         }
 
@@ -354,7 +407,11 @@ PlasmoidItem {
 
             anchors.fill: parent
 
-            target: taskList
+            target: tasks.groupByDesktop ? taskListHost : taskList
+            childAtProvider: tasks.groupByDesktop ? (x, y) => tasks.taskItemAt(taskListHost, x, y) : null
+            // Колесо пока работает только в режиме апстрима: в группах нужен
+            // отдельный обход по всем спискам, см. README.
+            handleWheelEvents: !tasks.groupByDesktop
 
             onUrlsDropped: urls => {
                 // If all dropped URLs point to application desktop files, we'll add a launcher for each of them.
@@ -371,7 +428,7 @@ PlasmoidItem {
 
                 // Otherwise we'll just start a new instance of the application with the URLs as argument,
                 // as you probably don't expect some of your files to open in the app and others to spawn launchers.
-                tasksModel.requestOpenUrls(hoveredItem.modelIndex(), urls);
+                (hoveredItem.taskModel || tasksModel).requestOpenUrls(hoveredItem.modelIndex(), urls);
             }
         }
 
@@ -412,86 +469,167 @@ PlasmoidItem {
                 top: parent.top
             }
 
-            height: taskList.height
-            width: taskList.width
+            height: taskListHost.height
+            width: taskListHost.width
 
-            TaskList {
-                id: taskList
+            Item {
+                id: taskListHost
 
-                LayoutMirroring.enabled: tasks.shouldBeMirrored(Plasmoid.configuration.reverseMode, Qt.application.layoutDirection, vertical)
                 anchors {
                     left: parent.left
                     top: parent.top
                 }
 
-                readonly property real widthOccupation: taskRepeater.count / columns
-                readonly property real heightOccupation: taskRepeater.count / rows
+                // Лишние группы не должны «вылезать» на соседние виджеты панели.
+                clip: tasks.groupByDesktop
 
-                Layout.maximumWidth: {
-                    const totalMaxWidth = children.reduce((accumulator, child) => {
-                            if (!isFinite(child.Layout.maximumWidth)) {
-                                return accumulator;
+                width: tasks.groupByDesktop ? groupsRow.width : taskList.width
+                height: tasks.groupByDesktop ? groupsRow.height : taskList.height
+
+                // --- режим апстрима: один общий список задач ---------------
+                TaskList {
+                    id: taskList
+
+                    tasksRoot: tasks
+                    taskModel: tasksModel
+                    visible: !tasks.groupByDesktop
+
+                    anchors {
+                        left: parent.left
+                        top: parent.top
+                    }
+
+                    LayoutMirroring.enabled: tasks.shouldBeMirrored(Plasmoid.configuration.reverseMode, Qt.application.layoutDirection, vertical)
+
+                    onAnimatingChanged: {
+                        if (!animating) {
+                            tasks.publishIconGeometries(children, tasks);
+                        }
+                    }
+
+                    Repeater {
+                        id: taskRepeater
+
+                        delegate: Task {
+                            tasksRoot: tasks
+                            taskModel: tasksModel
+                            taskList: tasks.taskList
+                        }
+                        onItemRemoved: (index, item) => {
+                            if (tasks.containsMouse && index !== taskRepeater.count &&
+                                item.model.WinIdList.length > 0 &&
+                                taskClosedWithMouseMiddleButton.includes(item.winIdList[0])) {
+                                needLayoutRefresh = true;
                             }
-                            return accumulator + child.Layout.maximumWidth
-                        }, 0);
-                    return Math.round(totalMaxWidth / widthOccupation);
-                }
-                Layout.maximumHeight: {
-                    const totalMaxHeight = children.reduce((accumulator, child) => {
-                            if (!isFinite(child.Layout.maximumHeight)) {
-                                return accumulator;
-                            }
-                            return accumulator + child.Layout.maximumHeight
-                        }, 0);
-                    return Math.round(totalMaxHeight / heightOccupation);
-                }
-                width: {
-                    if (tasks.shouldShrinkToZero) {
-                        return 0;
-                    }
-                    if (tasks.vertical) {
-                        return tasks.width * Math.min(1, widthOccupation);
-                    } else {
-                        return Math.min(tasks.width, Layout.maximumWidth);
-                    }
-                }
-                height: {
-                    if (tasks.shouldShrinkToZero) {
-                        return 0;
-                    }
-                    if (tasks.vertical) {
-                        return Math.min(tasks.height, Layout.maximumHeight);
-                    } else {
-                        return tasks.height * Math.min(1, heightOccupation);
+                            taskClosedWithMouseMiddleButton = [];
+                        }
                     }
                 }
 
-                flow: {
-                    if (tasks.vertical) {
-                        return Plasmoid.configuration.forceStripes ? Grid.LeftToRight : Grid.TopToBottom
+                // --- режим форка: пейджер + группа иконок на каждый стол ----
+                Grid {
+                    id: groupsRow
+
+                    visible: tasks.groupByDesktop
+
+                    anchors {
+                        left: parent.left
+                        top: parent.top
                     }
-                    return Plasmoid.configuration.forceStripes ? Grid.TopToBottom : Grid.LeftToRight
-                }
 
-                onAnimatingChanged: {
-                    if (!animating) {
-                        tasks.publishIconGeometries(children, tasks);
-                    }
-                }
+                    flow: tasks.vertical ? Grid.TopToBottom : Grid.LeftToRight
+                    spacing: 1
 
-                Repeater {
-                    id: taskRepeater
-
-                    delegate: Task {
+                    DesktopPager {
+                        id: desktopPager
                         tasksRoot: tasks
                     }
-                    onItemRemoved: (index, item) => {
-                        if (tasks.containsMouse && index !== taskRepeater.count &&
-                            item.model.WinIdList.length > 0 &&
-                            taskClosedWithMouseMiddleButton.includes(item.winIdList[0])) {
-                            needLayoutRefresh = true;
+
+                    Repeater {
+                        id: desktopGroupRepeater
+
+                        model: tasks.groupByDesktop ? virtualDesktopInfo.desktopIds : []
+
+                        delegate: Item {
+                            id: groupRoot
+
+                            required property int index
+                            required property var modelData
+
+                            readonly property Item list: groupList
+                            readonly property bool current: modelData === virtualDesktopInfo.currentDesktop
+
+                            // Место под разделитель между группами.
+                            readonly property int separatorWidth: index > 0 ? 3 : 0
+
+                            width: groupList.width + separatorWidth
+                            height: groupList.height
+                            visible: groupModel.count > 0
+
+                            // Модель именно этого рабочего стола.
+                            TaskManager.TasksModel {
+                                id: groupModel
+
+                                virtualDesktop: groupRoot.modelData
+                                filterByVirtualDesktop: true
+                                filterByScreen: Plasmoid.configuration.showOnlyCurrentScreen
+                                filterByActivity: Plasmoid.configuration.showOnlyCurrentActivity
+                                activity: activityInfo.currentActivity
+                                screenGeometry: Plasmoid.containment.screenGeometry
+
+                                // Лончеры про рабочие столы ничего не знают, поэтому пока
+                                // показываем их только в группе текущего стола.
+                                launcherList: groupRoot.current ? tasksModel.launcherList : []
+
+                                sortMode: tasksModel.sortMode
+                                groupMode: tasksModel.groupMode
+                                groupInline: tasksModel.groupInline
+                                separateLaunchers: tasksModel.separateLaunchers
+                                launchInPlace: tasksModel.launchInPlace
+                                hideActivatedLaunchers: tasksModel.hideActivatedLaunchers
+                                groupingWindowTasksThreshold: tasksModel.groupingWindowTasksThreshold
+                                groupingAppIdBlacklist: tasksModel.groupingAppIdBlacklist
+                                groupingLauncherUrlBlacklist: tasksModel.groupingLauncherUrlBlacklist
+                            }
+
+                            Rectangle {
+                                visible: groupRoot.separatorWidth > 0
+                                width: 1
+                                height: Math.round(groupRoot.height * 0.6)
+                                y: Math.round((groupRoot.height - height) / 2)
+                                color: Kirigami.Theme.disabledTextColor
+                                opacity: 0.5
+                            }
+
+                            TaskList {
+                                id: groupList
+
+                                x: groupRoot.separatorWidth
+                                anchors.top: parent.top
+
+                                tasksRoot: tasks
+                                taskModel: groupModel
+                                clampToWidget: false
+
+                                LayoutMirroring.enabled: tasks.shouldBeMirrored(Plasmoid.configuration.reverseMode, Qt.application.layoutDirection, vertical)
+
+                                onAnimatingChanged: {
+                                    if (!animating) {
+                                        tasks.publishIconGeometries(children, tasks);
+                                    }
+                                }
+
+                                Repeater {
+                                    model: groupModel
+
+                                    delegate: Task {
+                                        tasksRoot: tasks
+                                        taskModel: groupModel
+                                        taskList: groupList
+                                    }
+                                }
+                            }
                         }
-                        taskClosedWithMouseMiddleButton = [];
                     }
                 }
             }
@@ -526,7 +664,7 @@ PlasmoidItem {
             return;
         }
 
-        const task = taskRepeater.itemAt(index);
+        const task = tasks.visibleTaskItems()[index];
         if (task) {
             TaskTools.activateTask(task.modelIndex(), task.model, null, task, Plasmoid, this, effectWatcher.registered);
         }
@@ -536,6 +674,7 @@ PlasmoidItem {
         const initialArgs = Object.assign(args, {
             visualParent: rootTask,
             modelIndex,
+            taskModel: rootTask?.taskModel ?? tasksModel,
             mpris2Source,
             backend,
         });

@@ -74,14 +74,17 @@ function activateNextPrevTask(anchor, next, wheelSkipMinimized, tasks) {
     tasks.tasksModel.requestActivate(target);
 }
 
-function activateTask(index, model, modifiers, task, plasmoid, tasks, windowViewAvailable) {
+function activateTask(index, model, modifiers, task, plasmoid, tasks, windowViewAvailable, taskModel) {
+    // В форке у каждого рабочего стола своя TasksModel, поэтому запросы идут
+    // в модель того списка, из которого пришёл клик (а не в глобальную).
+    const tasksModel = taskModel || tasks.tasksModel;
     if (modifiers & Qt.ShiftModifier) {
-        tasks.tasksModel.requestNewInstance(index);
+        tasksModel.requestNewInstance(index);
         return;
     }
     // Publish delegate geometry again if there are more than one task manager instance
     if (taskManagerInstanceCount >= 2) {
-        tasks.tasksModel.requestPublishDelegateGeometry(task.modelIndex(), tasks.backend.globalRect(task), task);
+        tasksModel.requestPublishDelegateGeometry(task.modelIndex(), tasks.backend.globalRect(task), task);
     }
 
     if (model.IsGroupParent) {
@@ -98,10 +101,10 @@ function activateTask(index, model, modifiers, task, plasmoid, tasks, windowView
             let lastUsedTask = undefined;
 
             // Build list of child tasks and get stacking order data for them
-            for (let i = 0; i < tasks.tasksModel.rowCount(task.modelIndex(index)); ++i) {
-                const childTaskModelIndex = tasks.tasksModel.makeModelIndex(task.index, i);
+            for (let i = 0; i < tasksModel.rowCount(task.modelIndex(index)); ++i) {
+                const childTaskModelIndex = tasksModel.makeModelIndex(task.index, i);
                 childTaskList.push(childTaskModelIndex);
-                const stacking = tasks.tasksModel.data(childTaskModelIndex, TaskManager.AbstractTasksModel.StackingOrder);
+                const stacking = tasksModel.data(childTaskModelIndex, TaskManager.AbstractTasksModel.StackingOrder);
                 if (stacking > highestStacking) {
                     highestStacking = stacking;
                     lastUsedTask = childTaskModelIndex;
@@ -110,8 +113,8 @@ function activateTask(index, model, modifiers, task, plasmoid, tasks, windowView
 
             // If the active task is from a different app from the group that
             // was clicked on switch to the last-used task from that app.
-            if (!childTaskList.some(index => tasks.tasksModel.data(index, TaskManager.AbstractTasksModel.IsActive))) {
-                tasks.tasksModel.requestActivate(lastUsedTask);
+            if (!childTaskList.some(index => tasksModel.data(index, TaskManager.AbstractTasksModel.IsActive))) {
+                tasksModel.requestActivate(lastUsedTask);
             } else {
                 // If the active task is already among in the group that was
                 // activated, cycle through all tasks according to the order of
@@ -119,13 +122,13 @@ function activateTask(index, model, modifiers, task, plasmoid, tasks, windowView
                 // every click.
                 for (let j = 0; j < childTaskList.length; ++j) {
                     const childTask = childTaskList[j];
-                        if (tasks.tasksModel.data(childTask, TaskManager.AbstractTasksModel.IsActive)) {
+                        if (tasksModel.data(childTask, TaskManager.AbstractTasksModel.IsActive)) {
                             // Found the current task. Activate the next one
                             let nextTask = j + 1;
                             if (nextTask >= childTaskList.length) {
                                 nextTask = 0;
                             }
-                            tasks.tasksModel.requestActivate(childTaskList[nextTask]);
+                            tasksModel.requestActivate(childTaskList[nextTask]);
                             break;
                         }
                 }
@@ -167,12 +170,12 @@ function activateTask(index, model, modifiers, task, plasmoid, tasks, windowView
         }
     } else {
         if (model.IsMinimized) {
-            tasks.tasksModel.requestToggleMinimized(index);
-            tasks.tasksModel.requestActivate(index);
+            tasksModel.requestToggleMinimized(index);
+            tasksModel.requestActivate(index);
         } else if (model.IsActive && plasmoid.configuration.minimizeActiveTaskOnClick) {
-            tasks.tasksModel.requestToggleMinimized(index);
+            tasksModel.requestToggleMinimized(index);
         } else {
-            tasks.tasksModel.requestActivate(index);
+            tasksModel.requestActivate(index);
         }
     }
 }
@@ -211,8 +214,12 @@ function createGroupDialog(visualParent, tasks) {
 
     if (tasks.groupDialog) {
         tasks.groupDialog.visualParent = visualParent;
+        tasks.groupDialog.taskModel = visualParent.taskModel || tasks.tasksModel;
         return;
     }
 
-    tasks.groupDialog = tasks.groupDialogComponent.createObject(tasks, { visualParent });
+    tasks.groupDialog = tasks.groupDialogComponent.createObject(tasks, {
+        visualParent,
+        taskModel: visualParent.taskModel || tasks.tasksModel,
+    });
 }

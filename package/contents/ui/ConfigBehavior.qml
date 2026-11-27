@@ -35,6 +35,7 @@ KCMUtils.SimpleKCM {
     property alias cfg_minimizeActiveTaskOnClick: minimizeActive.checked
     property alias cfg_unhideOnAttention: unhideOnAttention.checked
     property alias cfg_reverseMode: reverseMode.checked
+    property alias cfg_groupByDesktop: groupByDesktop.checked
 
     DBus.DBusServiceWatcher {
         id: effectWatcher
@@ -45,6 +46,23 @@ KCMUtils.SimpleKCM {
     Kirigami.FormLayout {
         anchors.left: parent.left
         anchors.right: parent.right
+
+        QQC2.CheckBox {
+            id: groupByDesktop
+            text: i18nc("@option:check", "Group tasks by virtual desktop")
+            Kirigami.FormData.label: i18nc("@label:checkbox", "Desktops:")
+        }
+
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: groupByDesktop.checked
+            text: i18nc("@info", "All virtual desktops are shown at once, each with its own group of icons, and the desktop names work as a pager. The \"Show only current desktop\" option below is ignored while this is enabled.")
+            type: Kirigami.MessageType.Information
+        }
+
+        Item {
+            Kirigami.FormData.isSection: true
+        }
 
         QQC2.ComboBox {
             id: groupingStrategy

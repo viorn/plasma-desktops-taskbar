@@ -140,6 +140,10 @@
       <label> Spacing between icons in task manager. Margin is multiplied by this value.</label>
       <default>1</default>
     </entry>
+    <entry name="groupByDesktop" type="Bool">
+      <label>Whether to lay out task buttons grouped by virtual desktop, with a desktop indicator (fork feature).</label>
+      <default>true</default>
+    </entry>
   </group>
 
 </kcfg>

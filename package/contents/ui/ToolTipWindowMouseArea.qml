@@ -14,6 +14,8 @@ MouseArea {
     required property /*QModelIndex*/var modelIndex
     required property /*undefined|WId where WId = int|string*/ var winId
     required property Task rootTask
+    // Модель группы, к которой относится окно (в форке списков несколько).
+    required property var taskModel
 
     acceptedButtons: Qt.LeftButton | Qt.MiddleButton | Qt.RightButton
     hoverEnabled: true
@@ -22,13 +24,13 @@ MouseArea {
     onClicked: (mouse) => {
         switch (mouse.button) {
         case Qt.LeftButton:
-            tasksModel.requestActivate(modelIndex);
+            taskModel.requestActivate(modelIndex);
             rootTask.hideImmediately();
             backend.cancelHighlightWindows();
             break;
         case Qt.MiddleButton:
             backend.cancelHighlightWindows();
-            tasksModel.requestClose(modelIndex);
+            taskModel.requestClose(modelIndex);
             break;
         case Qt.RightButton:
             tasks.createContextMenu(rootTask, modelIndex).show();

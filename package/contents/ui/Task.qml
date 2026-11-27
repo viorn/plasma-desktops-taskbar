@@ -43,12 +43,17 @@ PlasmaCore.ToolTipArea {
     Layout.fillHeight: !inPopup
     Layout.maximumWidth: tasksRoot.vertical
         ? -1
-        : ((model.IsLauncher && !tasks.iconsOnly) ? tasksRoot.height / taskList.rows : LayoutMetrics.preferredMaxWidth())
+        : ((model.IsLauncher && !tasksRoot.iconsOnly) ? tasksRoot.height / taskList.rows : LayoutMetrics.preferredMaxWidth())
     Layout.maximumHeight: tasksRoot.vertical ? LayoutMetrics.preferredMaxHeight() : -1
 
     required property var model
     required property int index
     required property /*main.qml*/ Item tasksRoot
+    // В форке списков задач может быть несколько (по одному на рабочий стол),
+    // поэтому модель и раскладка приходят свойствами: без этого делегат
+    // цеплялся бы за единственный глобальный tasksModel из main.qml.
+    required property var taskModel
+    required property var taskList
 
     readonly property int pid: model.AppPid
     readonly property string appName: model.AppName
@@ -218,7 +223,7 @@ PlasmaCore.ToolTipArea {
 
     onChildCountChanged: {
         if (TaskTools.taskManagerInstanceCount < 2 && childCount > previousChildCount) {
-            tasksModel.requestPublishDelegateGeometry(modelIndex(), backend.globalRect(task), task);
+            taskModel.requestPublishDelegateGeometry(modelIndex(), backend.globalRect(task), task);
         }
 
         previousChildCount = childCount;
@@ -270,14 +275,14 @@ PlasmaCore.ToolTipArea {
     Keys.onDownPressed: event => Keys.rightPressed(event)
     Keys.onLeftPressed: event => {
         if (!inPopup && (event.modifiers & Qt.ControlModifier) && (event.modifiers & Qt.ShiftModifier)) {
-            tasksModel.move(task.index, task.index - 1);
+            taskModel.move(task.index, task.index - 1);
         } else {
             event.accepted = false;
         }
     }
     Keys.onRightPressed: event => {
         if (!inPopup && (event.modifiers & Qt.ControlModifier) && (event.modifiers & Qt.ShiftModifier)) {
-            tasksModel.move(task.index, task.index + 1);
+            taskModel.move(task.index, task.index + 1);
         } else {
             event.accepted = false;
         }
@@ -285,8 +290,8 @@ PlasmaCore.ToolTipArea {
 
     function modelIndex(): /*QModelIndex*/ var {
         return inPopup
-            ? tasksModel.makeModelIndex(groupDialog.visualParent.index, index)
-            : tasksModel.makeModelIndex(index);
+            ? taskModel.makeModelIndex(groupDialog.visualParent.index, index)
+            : taskModel.makeModelIndex(index);
     }
 
     function showContextMenu(args: var): void {
@@ -349,7 +354,8 @@ PlasmaCore.ToolTipArea {
         mainItem.blockingUpdates = (mainItem.isGroup !== model.IsGroupParent); // BUG 464597 Force unload the previous component
 
         mainItem.parentTask = this;
-        mainItem.rootIndex = tasksModel.makeModelIndex(index, -1);
+        mainItem.rootIndex = taskModel.makeModelIndex(index, -1);
+        mainItem.taskModel = taskModel;
 
         mainItem.appName = Qt.binding(() => model.AppName);
         mainItem.pidParent = Qt.binding(() => model.AppPid);
@@ -427,16 +433,16 @@ PlasmaCore.ToolTipArea {
         onTapped: (eventPoint, button) => {
             if (button === Qt.MiddleButton) {
                 if (Plasmoid.configuration.middleClickAction === TaskManagerApplet.Backend.NewInstance) {
-                    tasksModel.requestNewInstance(modelIndex());
+                    taskModel.requestNewInstance(modelIndex());
                 } else if (Plasmoid.configuration.middleClickAction === TaskManagerApplet.Backend.Close) {
                     tasksRoot.taskClosedWithMouseMiddleButton = model.WinIdList.slice()
-                    tasksModel.requestClose(modelIndex());
+                    taskModel.requestClose(modelIndex());
                 } else if (Plasmoid.configuration.middleClickAction === TaskManagerApplet.Backend.ToggleMinimized) {
-                    tasksModel.requestToggleMinimized(modelIndex());
+                    taskModel.requestToggleMinimized(modelIndex());
                 } else if (Plasmoid.configuration.middleClickAction === TaskManagerApplet.Backend.ToggleGrouping) {
-                    tasksModel.requestToggleGrouping(modelIndex());
+                    taskModel.requestToggleGrouping(modelIndex());
                 } else if (Plasmoid.configuration.middleClickAction === TaskManagerApplet.Backend.BringToCurrentDesktop) {
-                    tasksModel.requestVirtualDesktops(modelIndex(), [virtualDesktopInfo.currentDesktop]);
+                    taskModel.requestVirtualDesktops(modelIndex(), [virtualDesktopInfo.currentDesktop]);
                 }
             } else if (button === Qt.BackButton || button === Qt.ForwardButton) {
                 const playerData = mpris2Source.playerForLauncherUrl(model.LauncherUrlWithoutIcon, model.AppPid);
@@ -586,7 +592,7 @@ PlasmaCore.ToolTipArea {
                 PropertyChanges {
                     target: iconBox
                     anchors.leftMargin: 0
-                    width: Math.min(task.parent.minimumWidth, tasks.height)
+                    width: Math.min(task.parent.minimumWidth, tasksRoot.height)
                         - adjustMargin(true, task.width, taskFrame.margins.left)
                         - adjustMargin(true, task.width, taskFrame.margins.right)
                 }

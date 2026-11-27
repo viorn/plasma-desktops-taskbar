@@ -16,12 +16,23 @@ DropArea {
     signal urlsDropped(var urls)
 
     property Item target
+    // Форк: когда задачи разложены по группам (рабочим столам), под курсором
+    // надо искать задачу в разных списках, а не только в target.
+    property var childAtProvider: null
     property Item ignoredItem
     property Item hoveredItem
     property bool isGroupDialog: false
     property bool moved: false
 
     property alias handleWheelEvents: wheelHandler.handleWheelEvents
+
+    function itemAtPoint(x, y) {
+        const provider = dropArea.childAtProvider;
+        if (provider) {
+            return provider(x, y);
+        }
+        return dropArea.target ? dropArea.target.childAt(x, y) : null;
+    }
 
     //ignore anything that is neither internal to TaskManager or a URL list
     onEntered: event => {
@@ -42,7 +53,7 @@ DropArea {
         if (isGroupDialog) {
             above = target.itemAt(event.x, event.y);
         } else {
-            above = target.childAt(event.x, event.y);
+            above = dropArea.itemAtPoint(event.x, event.y);
         }
 
         if (!above) {
@@ -71,7 +82,8 @@ DropArea {
             ignoredItem = null;
         }
 
-        if (tasksModel.sortMode === TaskManager.TasksModel.SortManual && tasks.dragSource) {
+        const taskModel = above.taskModel || tasksModel;
+        if (taskModel.sortMode === TaskManager.TasksModel.SortManual && tasks.dragSource) {
             // Reject drags between different TaskList instances.
             if (tasks.dragSource.parent !== above.parent) {
                 return;
@@ -81,10 +93,10 @@ DropArea {
 
             if (tasks.dragSource !== above && tasks.dragSource.index !== insertAt) {
                 if (tasks.groupDialog) {
-                    tasksModel.move(tasks.dragSource.index, insertAt,
-                        tasksModel.makeModelIndex(tasks.groupDialog.visualParent.index));
+                    taskModel.move(tasks.dragSource.index, insertAt,
+                        taskModel.makeModelIndex(tasks.groupDialog.visualParent.index));
                 } else {
-                    tasksModel.move(tasks.dragSource.index, insertAt);
+                    taskModel.move(tasks.dragSource.index, insertAt);
                 }
 
                 ignoredItem = above;
@@ -152,7 +164,7 @@ DropArea {
             if (parent.hoveredItem.model.IsGroupParent) {
                 TaskTools.createGroupDialog(parent.hoveredItem, tasks);
             } else if (!parent.hoveredItem.model.IsLauncher) {
-                tasksModel.requestActivate(parent.hoveredItem.modelIndex());
+                (parent.hoveredItem.taskModel || tasksModel).requestActivate(parent.hoveredItem.modelIndex());
             }
         }
     }
@@ -178,7 +190,7 @@ DropArea {
                 rotation += 15;
                 increment--;
             }
-            const anchor = dropArea.target.childAt(event.x, event.y);
+            const anchor = dropArea.itemAtPoint(event.x, event.y);
             while (increment !== 0) {
                 TaskTools.activateNextPrevTask(anchor, increment < 0, Plasmoid.configuration.wheelSkipMinimized, tasks);
                 increment += (increment < 0) ? 1 : -1;

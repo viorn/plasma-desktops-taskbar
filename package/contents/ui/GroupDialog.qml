@@ -29,13 +29,16 @@ PlasmaCore.Dialog {
     readonly property real contentWidth: mainItem.width // No padding here to avoid text elide.
 
     property /*PlasmaCore.ItemStatus*/int _oldAppletStatus: PlasmaCore.Types.UnknownStatus
+    // В форке у каждой группы (рабочего стола) своя TasksModel —
+    // все действия идут в модель того списка, откуда пришёл клик.
+    property var taskModel: tasksModel
 
     function findActiveTaskIndex(): void {
-        if (!tasksModel.activeTask) {
+        if (!taskModel.activeTask) {
             return;
         }
         for (let i = 0; i < groupListView.count; i++) {
-            if (tasksModel.makeModelIndex(visualParent.index, i) === tasksModel.activeTask) {
+            if (taskModel.makeModelIndex(visualParent.index, i) === taskModel.activeTask) {
                 groupListView.positionViewAtIndex(i, ListView.Contain); // Prevent visual glitches
                 groupListView.currentIndex = i;
                 return;
@@ -64,8 +67,8 @@ PlasmaCore.Dialog {
                 return;
             }
 
-            const parentModelIndex = tasksModel.makeModelIndex(groupDialog.visualParent.index);
-            const status = tasksModel.move(groupListView.currentIndex, insertAt, parentModelIndex);
+            const parentModelIndex = taskModel.makeModelIndex(groupDialog.visualParent.index);
+            const status = taskModel.move(groupListView.currentIndex, insertAt, parentModelIndex);
             if (!status) {
                 return;
             }
@@ -101,8 +104,8 @@ PlasmaCore.Dialog {
                     readonly property TextMetrics textMetrics: TextMetrics {}
                     property real maxTextWidth: 0
 
-                    model: tasksModel
-                    rootIndex: tasksModel.makeModelIndex(groupDialog.visualParent.index)
+                    model: taskModel
+                    rootIndex: taskModel.makeModelIndex(groupDialog.visualParent.index)
                     delegate: Task {
                         width: groupListView.width
                         visible: true

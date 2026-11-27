@@ -26,6 +26,8 @@ ColumnLayout {
 
     required property int index
     required property /*QModelIndex*/ var submodelIndex
+    // Модель группы (в форке списков задач несколько).
+    required property var taskModel
     required property int appPid
     required property string display
     required property bool isMinimized
@@ -167,7 +169,7 @@ ColumnLayout {
                 icon.name: "window-close"
                 onClicked: {
                     backend.cancelHighlightWindows();
-                    tasksModel.requestClose(root.submodelIndex);
+                    taskModel.requestClose(root.submodelIndex);
                 }
             }
         }
@@ -183,6 +185,7 @@ ColumnLayout {
             sourceComponent: ToolTipWindowMouseArea {
                 rootTask: toolTipDelegate.parentTask
                 modelIndex: root.submodelIndex
+                taskModel: toolTipDelegate.taskModel
                 winId: thumbnailSourceItem.winId
             }
         }
@@ -355,6 +358,7 @@ ColumnLayout {
             sourceComponent: ToolTipWindowMouseArea {
                 rootTask: toolTipDelegate.parentTask
                 modelIndex: root.submodelIndex
+                taskModel: toolTipDelegate.taskModel
                 winId: thumbnailSourceItem.winId
             }
         }
