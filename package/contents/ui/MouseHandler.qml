@@ -26,6 +26,14 @@ DropArea {
 
     property alias handleWheelEvents: wheelHandler.handleWheelEvents
 
+    // Форк: перетаскиваемая задача запоминается на старте драга — к его концу
+    // tasks.dragSource уже обнулён.
+    property Item draggedTask
+
+    // Последняя позиция курсора внутри виджета — для диагностики конца драга.
+    property real lastX: 0
+    property real lastY: 0
+
     function itemAtPoint(x, y) {
         const provider = dropArea.childAtProvider;
         if (provider) {
@@ -36,6 +44,7 @@ DropArea {
 
     //ignore anything that is neither internal to TaskManager or a URL list
     onEntered: event => {
+        tasks.dndLog("entered formats=" + event.formats.join(","));
         if (event.formats.indexOf("text/x-plasmoidservicename") >= 0) {
             event.accepted = false;
         }
@@ -49,6 +58,9 @@ DropArea {
             return;
         }
 
+        lastX = event.x;
+        lastY = event.y;
+
         let above;
         if (isGroupDialog) {
             above = target.itemAt(event.x, event.y);
@@ -57,12 +69,17 @@ DropArea {
         }
 
         // Форк: запоминаем, над чем находится перетаскиваемая задача — по этому
-        // месту отпускание решает, куда её перенести (см. tasks.handleInternalDrop).
+        // месту отпускание решает, куда её перенести (см. tasks.finishDrag).
         // Делаем это до проверки на null: над подписью пустого стола задачи нет,
         // но перенести её туда всё равно можно.
         if (tasks.dragSource) {
+            const group = tasks.groupAt(dropArea, event.x, event.y);
+            if (above !== tasks.dragOverItem || group !== tasks.dragOverGroup) {
+                tasks.dndLog("over item=" + (above && above.model ? above.model.AppName : "null")
+                    + " group=" + (group ? String(group.modelData).substring(0, 8) : "null"));
+            }
             tasks.dragOverItem = above;
-            tasks.dragOverGroup = tasks.groupAt(dropArea, event.x, event.y);
+            tasks.dragOverGroup = group;
         }
 
         if (!above) {
@@ -93,8 +110,9 @@ DropArea {
 
         const taskModel = above.taskModel || tasksModel;
         if (tasks.groupByDesktop && tasks.dragSource?.model?.IsLauncher) {
-            // Порядок закреплений хранится в конфиге, а не в модели: переставим
-            // его одним разом по отпусканию, иначе модель и конфиг разъедутся.
+            // Порядок закреплений живёт в конфиге: move() в модели разошёлся бы
+            // с ним (libtaskmanager потом сдвигает строки ещё раз), поэтому
+            // переставляем записи конфига по завершении драга.
             return;
         }
         if (taskModel.sortMode === TaskManager.TasksModel.SortManual && tasks.dragSource) {
@@ -123,15 +141,24 @@ DropArea {
     }
 
     onExited: {
+        tasks.dndLog("exited last=" + Math.round(lastX) + "," + Math.round(lastY)
+            + " size=" + Math.round(dropArea.width) + "x" + Math.round(dropArea.height));
         hoveredItem = null;
         activationTimer.stop();
+        // Курсор ушёл с виджета — цели для переноса больше нет.
+        if (tasks.dragSource) {
+            tasks.dragOverItem = null;
+            tasks.dragOverGroup = null;
+        }
     }
 
     onDropped: event => {
-        // Внутренний drop: перенос задачи или закрепления в другую группу
-        // (рабочий стол) либо перестановка закреплений.
+        // Внутренний drop: применяем сразу (dragSource ещё жив именно в этот
+        // момент), а если drop до виджета не дошёл — это сделает обработчик
+        // конца драга ниже.
         if (event.formats.indexOf("application/x-orgkdeplasmataskmanager_taskbuttonitem") >= 0) {
-            tasks.handleInternalDrop(tasks.dragSource, tasks.dragOverItem, tasks.dragOverGroup);
+            tasks.dndLog("dropped internal formats=" + event.formats.join(","));
+            tasks.finishDrag(tasks.dragSource || draggedTask, tasks.dragOverItem, tasks.dragOverGroup);
             event.accepted = false;
             return;
         }
@@ -155,8 +182,15 @@ DropArea {
             if (!dragSource) {
                 ignoredItem = null;
                 ignoreItemTimer.stop();
-                tasks.dragOverItem = null;
-                tasks.dragOverGroup = null;
+                // Конец перетаскивания: применяем перенос/перестановку (если это
+                // уже не сделал onDropped).
+                tasks.finishDrag(draggedTask, tasks.dragOverItem, tasks.dragOverGroup);
+                draggedTask = null;
+            } else {
+                draggedTask = dragSource;
+                tasks.dragApplied = false;
+                tasks.dndLog("drag start app=" + (dragSource.model ? dragSource.model.AppName : "?")
+                    + " launcher=" + (dragSource.model ? dragSource.model.IsLauncher : "?"));
             }
         }
     }

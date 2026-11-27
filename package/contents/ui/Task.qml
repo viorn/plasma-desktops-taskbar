@@ -507,6 +507,9 @@ PlasmaCore.ToolTipArea {
             }
 
             onActiveChanged: {
+                tasksRoot.dndLog("handler active=" + active
+                    + " app=" + (model ? model.AppName : "?")
+                    + " launcher=" + (model ? model.IsLauncher : "?"));
                 if (active) {
                     icon.grabToImage(result => {
                         if (!dragHandler.active) {
@@ -531,8 +534,9 @@ PlasmaCore.ToolTipArea {
                             [internalMimeType]: mimeData,
                         };
                         dragHelper.Drag.active = dragHandler.active;
-                    });
-                } else {
+                        tasksRoot.dndLog("drag payload formats="
+                            + Object.keys(dragHelper.Drag.mimeData).join(","));
+                    });                } else {
                     setRequestedInhibitDnd(false);
                     dragHelper.Drag.active = false;
                     dragHelper.Drag.imageSource = "";

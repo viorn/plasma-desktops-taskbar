@@ -189,6 +189,18 @@ PlasmoidItem {
     // переносить задачи и закрепления между группами (рабочими столами).
     property var dragOverItem: null
     property var dragOverGroup: null
+    // Перенос уже применён для текущего драга — защита от двойного применения
+    // (drop и конец драга приходят в неопределённом порядке).
+    property bool dragApplied: false
+    // Временная диагностика drag-n-drop: пишет в journal (journalctl --user
+    // -u plasma-plasmashell). Включается на время проверки в реальной панели.
+    readonly property bool dndDebug: true
+
+    function dndLog(message: string): void {
+        if (tasks.dndDebug) {
+            console.warn("[dnd] " + message);
+        }
+    }
 
     // fork: запуск приложения из группы другого стола — сначала переключаемся
     // на этот стол, потом запускаем (иначе окно откроется на текущем).
@@ -397,24 +409,46 @@ PlasmoidItem {
         return null;
     }
 
-    // Отпускание перетаскиваемой внутри виджета задачи: перенос на другой стол
-    // или перестановка закрепления. Порядок закреплений живёт в конфиге, поэтому
-    // переставляем не модель, а записи launcherDesktops.
-    function handleInternalDrop(source, overItem, overGroup): void {
+    // Завершение перетаскивания внутри виджета: перенос задачи или закрепления
+    // в другую группу (рабочий стол) либо перестановка закреплений.
+    // Порядок закреплений живёт в конфиге (launcherDesktops), поэтому переставляем
+    // не строки модели, а записи конфига.
+    // Вызывается дважды — из MouseHandler.onDropped и по концу драга: порядок
+    // этих событий не гарантирован, а в панели drop может вообще не дойти.
+    // Повторный вызов отсекает tasks.dragApplied.
+    function finishDrag(source, overItem, overGroup): void {
+        tasks.dragOverGroup = null;
+        tasks.dragOverItem = null;
+
         if (!source || !source.model) {
+            tasks.dndLog("finish: no source");
             return;
         }
+
+        if (tasks.dragApplied) {
+            tasks.dndLog("finish: already applied, skip");
+            return;
+        }
+        tasks.dragApplied = true;
 
         const sourceDesktop = source.taskModel && source.taskModel.virtualDesktop !== undefined
             ? String(source.taskModel.virtualDesktop) : "";
         const targetDesktop = overGroup ? String(overGroup.modelData) : "";
         const url = source.model.LauncherUrlWithoutIcon;
 
+        tasks.dndLog("finish: app=" + source.model.AppName
+            + " launcher=" + (source.model.IsLauncher === true)
+            + " src=" + sourceDesktop.substring(0, 8)
+            + " dst=" + (targetDesktop ? targetDesktop.substring(0, 8) : "none")
+            + " overItem=" + (overItem && overItem.model ? overItem.model.AppName : "null"));
+
         if (source.model.IsLauncher === true) {
             if (targetDesktop && targetDesktop !== sourceDesktop) {
                 tasks.moveLauncherPin(url, sourceDesktop, targetDesktop);
             } else if (overItem && overItem !== source && overItem.model
-                       && overItem.model.IsLauncher === true) {
+                       && overItem.model.IsLauncher === true
+                       && source.taskModel && overItem.taskModel
+                       && String(overItem.taskModel.virtualDesktop) === sourceDesktop) {
                 tasks.reorderLauncherPin(sourceDesktop, url,
                     overItem.model.LauncherUrlWithoutIcon, overItem.index > source.index);
             }
