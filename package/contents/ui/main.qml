@@ -848,6 +848,14 @@ PlasmoidItem {
                                             tasksRoot: tasks
                                             taskModel: groupModel
                                             taskList: groupList
+
+                                            // Пока приложение запускается, окна ещё нет и
+                                            // стартовая задача не знает своего стола
+                                            // (VirtualDesktops=[0], IsOnAllVirtualDesktops),
+                                            // поэтому во всех моделях она есть. Показываем
+                                            // её только в группе текущего стола — там, где
+                                            // появится окно.
+                                            visible: groupRoot.current || !(model && model.IsStartup)
                                         }
                                     }
                                 }
