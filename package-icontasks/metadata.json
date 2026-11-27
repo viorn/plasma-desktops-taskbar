@@ -59,13 +59,14 @@
         ],
         "BugReportUrl": "https://bugs.kde.org/enter_bug.cgi?product=plasmashell&component=Task%20Manager%20and%20Icons-Only%20Task%20Manager",
         "Category": "Windows and Tasks",
-        "Description": "App bar displaying only icons",
         "EnabledByDefault": true,
         "Icon": "preferences-system-windows",
         "Id": "local.vyuyukin.iconbar",
         "License": "GPL-2.0+",
-        "Name": "Icon Taskbar (fork)",
-        "Website": "https://userbase.kde.org/Plasma/Tasks"
+        "Name": "Desktops + Icon Taskbar",
+        "Website": "https://userbase.kde.org/Plasma/Tasks",
+        "Description": "Icons-only taskbar that shows one group of icons per virtual desktop",
+        "Description[ru]": "Панель задач только из значков, сгруппированных по виртуальным рабочим столам"
     },
     "X-Plasma-API-Minimum-Version": "6.0",
     "X-Plasma-Provides": [

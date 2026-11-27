@@ -1,6 +1,7 @@
 # plasma-taskmanager (fork)
 
-Форк стандартных виджетов Plasma 6 **Task Manager** и **Icons-Only Task Manager**,
+Форк стандартных виджетов Plasma 6 **Task Manager** и **Icons-Only Task Manager**
+(в системе называются *Desktops + Taskbar* / *Desktops + Icon Taskbar*),
 скопированный из `/usr/share/plasma/plasmoids/org.kde.plasma.taskmanager`
 (пакет `plasma-desktop-data 4:6.3.6-2`).
 
@@ -90,7 +91,7 @@ make uninstall   # убрать форк
 (KWin при этом не трогается, панель просто перерисуется).
 
 Добавить на панель: ПКМ → «Добавить элементы…» → «Окна и задачи» →
-*Taskbar (fork)* или *Icon Taskbar (fork)*.
+*Desktops + Taskbar* или *Desktops + Icon Taskbar*.
 
 Быстрый просмотр без панели: `plasmoidviewer -a local.vyuyukin.taskbar`
 (нужен пакет `plasma-sdk`).
