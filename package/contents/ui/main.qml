@@ -966,8 +966,10 @@ PlasmoidItem {
                                             // (VirtualDesktops=[0], IsOnAllVirtualDesktops),
                                             // поэтому во всех моделях она есть. Показываем
                                             // её только в группе текущего стола — там, где
-                                            // появится окно.
-                                            visible: groupRoot.current || !(model && model.IsStartup)
+                                            // появится окно (collapsed ещё и обнуляет место,
+                                            // которое иначе резервирует GridLayout).
+                                            collapsed: !groupRoot.current && model && model.IsStartup === true
+                                            visible: !collapsed
                                         }
                                     }
                                 }

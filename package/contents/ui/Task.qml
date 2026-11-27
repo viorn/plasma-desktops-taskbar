@@ -39,12 +39,22 @@ PlasmaCore.ToolTipArea {
         ? Math.max(LayoutMetrics.preferredMinWidth(), Math.min(LayoutMetrics.preferredMaxWidth(), tasksRoot.width / tasksRoot.plasmoid.configuration.maxStripes))
         : 0
 
-    Layout.fillWidth: true
-    Layout.fillHeight: !inPopup
-    Layout.maximumWidth: tasksRoot.vertical
-        ? -1
-        : ((model.IsLauncher && !tasksRoot.iconsOnly) ? tasksRoot.height / taskList.rows : LayoutMetrics.preferredMaxWidth())
-    Layout.maximumHeight: tasksRoot.vertical ? LayoutMetrics.preferredMaxHeight() : -1
+    // Форк: стартовая задача (приложение запускается, окна ещё нет) не знает
+    // своего стола и есть в моделях всех групп. В чужой группе её прячем — и
+    // мало спрятать (visible: false), GridLayout всё равно резервирует под неё
+    // место, поэтому обнуляем и размерные подсказки.
+    property bool collapsed: false
+
+    Layout.fillWidth: !task.collapsed
+    Layout.fillHeight: !inPopup && !task.collapsed
+    Layout.maximumWidth: task.collapsed
+        ? 0
+        : (tasksRoot.vertical
+            ? -1
+            : ((model.IsLauncher && !tasksRoot.iconsOnly) ? tasksRoot.height / taskList.rows : LayoutMetrics.preferredMaxWidth()))
+    Layout.maximumHeight: task.collapsed
+        ? 0
+        : (tasksRoot.vertical ? LayoutMetrics.preferredMaxHeight() : -1)
 
     required property var model
     required property int index
@@ -506,10 +516,19 @@ PlasmaCore.ToolTipArea {
                         setRequestedInhibitDnd(true);
                         tasksRoot.dragSource = task;
                         dragHelper.Drag.imageSource = result.url;
+                        // Форк: у строк-лончеров (и у групповых строк) libtaskmanager
+                        // отдаёт пустой MimeType и невалидный MimeData — Qt не может
+                        // собрать drag, и перетаскивание закреплённых не начиналось.
+                        // Для внутреннего переноса содержимое не нужно (берём
+                        // tasks.dragSource), достаточно, чтобы формат присутствовал.
+                        const internalMimeType = "application/x-orgkdeplasmataskmanager_taskbuttonitem";
+                        const mimeType = model.MimeType ? model.MimeType : internalMimeType;
+                        const mimeData = model.MimeData !== undefined && model.MimeData !== null
+                            ? model.MimeData : "";
                         dragHelper.Drag.mimeData = {
                             "text/x-orgkdeplasmataskmanager_taskurl": backend.tryDecodeApplicationsUrl(model.LauncherUrlWithoutIcon).toString(),
-                            [model.MimeType]: model.MimeData,
-                            "application/x-orgkdeplasmataskmanager_taskbuttonitem": model.MimeData,
+                            [mimeType]: mimeData,
+                            [internalMimeType]: mimeData,
                         };
                         dragHelper.Drag.active = dragHandler.active;
                     });
