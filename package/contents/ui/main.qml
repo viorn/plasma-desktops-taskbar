@@ -251,19 +251,54 @@ PlasmoidItem {
 
     // Все Task-элементы в порядке отображения: либо один список (апстрим),
     // либо группы по рабочим столам в порядке desktopIds.
+    // В children списка кроме делегатов Task есть ещё сам Repeater (он тоже Item
+    // и тоже имеет свойство model), поэтому берём только делегаты — у них задан
+    // taskList (так же поступает апстрим, обращаясь к Repeater.itemAt()).
+    function taskItemsOf(list): var {
+        const items = [];
+        if (!list) {
+            return items;
+        }
+        const children = list.children;
+        for (let i = 0; i < children.length; ++i) {
+            const child = children[i];
+            if (child && child.taskList !== undefined && child.model !== undefined && child.model !== null) {
+                items.push(child);
+            }
+        }
+        return items;
+    }
+
     function visibleTaskItems(): var {
         if (!groupByDesktop) {
-            return taskList.children;
+            return tasks.taskItemsOf(taskList);
         }
 
         let items = [];
         for (let i = 0; i < desktopGroupRepeater.count; ++i) {
             const group = desktopGroupRepeater.itemAt(i);
             if (group && group.visible && group.list) {
-                items = items.concat(group.list.children);
+                items = items.concat(tasks.taskItemsOf(group.list));
             }
         }
         return items;
+    }
+
+    // Задачи группы текущего рабочего стола — для Meta+1..9: нумерация идёт
+    // в рамках своего стола, а не по всем группам.
+    function currentDesktopTaskItems(): var {
+        if (!groupByDesktop) {
+            return tasks.taskItemsOf(taskList);
+        }
+
+        const current = virtualDesktopInfo.currentDesktop;
+        for (let i = 0; i < desktopGroupRepeater.count; ++i) {
+            const group = desktopGroupRepeater.itemAt(i);
+            if (group && group.modelData === current) {
+                return tasks.taskItemsOf(group.list);
+            }
+        }
+        return [];
     }
 
     // Поиск задачи под точкой (координаты в системe container) — для MouseHandler,
@@ -860,14 +895,15 @@ PlasmoidItem {
         tasksModel.requestRemoveLauncher(url);
     }
 
-    // This is called by plasmashell in response to a Meta+number shortcut.
-    // TODO: Change type to int
+    // This is called by plasmashell in response to a Meta+number shortcut
+    // (ShellCorona::activateTaskManagerEntry, индекс 0-based).
+    // В режиме групп нумерация — в рамках текущего рабочего стола.
     function activateTaskAtIndex(index: var): void {
         if (typeof index !== "number") {
             return;
         }
 
-        const task = tasks.visibleTaskItems()[index];
+        const task = tasks.currentDesktopTaskItems()[index];
         if (task) {
             TaskTools.activateTask(task.modelIndex(), task.model, null, task, Plasmoid, this, effectWatcher.registered, task.taskModel);
         }

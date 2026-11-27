@@ -94,6 +94,17 @@ readonly property bool iconsOnly: ForkIdentity.isIconsOnly(Plasmoid.pluginName)
 Код: `launchersFor()`, `addLauncherToDesktop()`, `removeLauncherFromDesktop()`,
 `launchOnDesktop()` в `main.qml`; пункты меню — в `ContextMenu.qml`.
 
+### Быстрые клавиши Meta+1…0
+
+Клавиши регистрирует **plasmashell** (`ShellCorona`, «Activate Task Manager Entry N»), а сам
+виджет получает вызов `activateTaskAtIndex(QVariant)` — апплет ищется по
+`X-Plasma-Provides: org.kde.plasma.multitasking`. То есть клавиши — часть виджета.
+
+В режиме групп нумерация идёт **в рамках текущего рабочего стола**: Meta+1 — первая иконка
+в группе активного стола, Meta+2 — вторая и т.д. (раньше нумерация шла по всем группам сразу,
+да ещё и считала служебный `Repeater` внутри `children`). При выключенной группировке поведение
+как в апстриме — все задачи по порядку.
+
 Ограничения текущей версии (осознанные, см. `.agents/protocols/group-by-desktop`):
 
 | Ограничение | Причина |
